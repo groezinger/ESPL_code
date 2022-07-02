@@ -5,6 +5,7 @@
 #include <time.h>
 #include <inttypes.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <SDL2/SDL_scancode.h>
 
@@ -14,7 +15,6 @@
 #include "task.h"
 #include "timers.h"
 
-#include "TUM_Ball.h"
 #include "TUM_Draw.h"
 #include "TUM_Event.h"
 #include "TUM_Sound.h"
@@ -23,7 +23,7 @@
 
 #include "AsyncIO.h"
 #include "buttons.h"
-#include <unistd.h>
+#include "playState.h"
 
 #define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
 #define mainGENERIC_STACK_SIZE ((unsigned short)2560)
@@ -173,60 +173,17 @@ void vDrawTask(void *pvParameters)
 }
 
 void vPlayerShip(void *pvParameters){
-    image_handle_t invaders_spritesheet_image =
-        tumDrawLoadImage("../resources/images/invaders_sheet.png");
-    spritesheet_handle_t invaders_spritesheet =
-        tumDrawLoadSpritesheet(invaders_spritesheet_image, 8, 2);
-    animation_handle_t invader_animation =
-       tumDrawAnimationCreate(invaders_spritesheet);
-    tumDrawAnimationAddSequence(invader_animation, "INVADER_ONE", 0, 0,
-                                SPRITE_SEQUENCE_HORIZONTAL_POS, 2);
-    tumDrawAnimationAddSequence(invader_animation, "INVADER_TWO", 0, 2,
-                                SPRITE_SEQUENCE_HORIZONTAL_POS, 2);
-    tumDrawAnimationAddSequence(invader_animation, "INVADER_THREE", 0, 4,
-                                SPRITE_SEQUENCE_HORIZONTAL_POS, 2);
-    sequence_handle_t invader_one_sequence =
-        tumDrawAnimationSequenceInstantiate(invader_animation, "INVADER_ONE",
-                                            1000);
-    sequence_handle_t invader_two_sequence =
-        tumDrawAnimationSequenceInstantiate(invader_animation, "INVADER_TWO",
-                                            1000);
-    sequence_handle_t invader_three_sequence =
-        tumDrawAnimationSequenceInstantiate(invader_animation, "INVADER_THREE",
-                                            1000);     
+    InitiateInvaders();    
     TickType_t xLastFrameTime = xTaskGetTickCount();
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
-            tumDrawClear(Black);
-            tumDrawAnimationDrawFrame(
-                    invader_one_sequence,
-                    xTaskGetTickCount() - xLastFrameTime,
-                    SCREEN_WIDTH*1/5, SCREEN_HEIGHT/5);
-            tumDrawAnimationDrawFrame(
-                    invader_one_sequence,
-                    xTaskGetTickCount() - xLastFrameTime,
-                    SCREEN_WIDTH*2/5, SCREEN_HEIGHT/5);
-            tumDrawAnimationDrawFrame(
-                    invader_one_sequence,
-                    xTaskGetTickCount() - xLastFrameTime,
-                    SCREEN_WIDTH*3/5, SCREEN_HEIGHT/5);
-            tumDrawAnimationDrawFrame(
-                    invader_one_sequence,
-                    xTaskGetTickCount() - xLastFrameTime,
-                    SCREEN_WIDTH*4/5, SCREEN_HEIGHT/5);
-            tumDrawAnimationDrawFrame(
-                    invader_two_sequence,
-                    xTaskGetTickCount() - xLastFrameTime,
-                    SCREEN_WIDTH/2-50, SCREEN_HEIGHT/2);
-            tumDrawAnimationDrawFrame(
-                    invader_three_sequence,
-                    xTaskGetTickCount() - xLastFrameTime,
-                    SCREEN_WIDTH/2+50, SCREEN_HEIGHT/2);
-            tumDrawSprite(invaders_spritesheet, 5, 1, SCREEN_WIDTH/2, SCREEN_HEIGHT/2+50);
+            DrawInvaders(xLastFrameTime);
+            DrawPlayerShip();
+            DrawBarricades();
             xSemaphoreGive(ScreenLock);
         }
         xLastFrameTime = xTaskGetTickCount();
-        if(getButtonState(KEYBOARD_C)){
+        if(getDebouncedButtonState(KEYBOARD_C)){
             xQueueSend(StateQueue, &MenuState, 0);
         }
         vTaskDelay((TickType_t)20);
@@ -239,7 +196,7 @@ void vMenu(void *pvParameters){
             tumDrawClear(White);
             xSemaphoreGive(ScreenLock);
         }
-        if(getButtonState(KEYBOARD_C)){
+        if(getDebouncedButtonState(KEYBOARD_C)){
             xQueueSend(StateQueue, &PlayState, 0);
         }
         vTaskDelay((TickType_t)20);

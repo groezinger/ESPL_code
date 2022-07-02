@@ -89,17 +89,13 @@ void evaluateButtons(){
         my_used_buttons[KEYBOARD_J].new_press = debounceButton(&my_used_buttons[KEYBOARD_J], buttons.buttons[KEYCODE(J)]);
         my_used_buttons[KEYBOARD_K].new_press = debounceButton(&my_used_buttons[KEYBOARD_K], buttons.buttons[KEYCODE(K)]);
         my_used_buttons[KEYBOARD_L].new_press = debounceButton(&my_used_buttons[KEYBOARD_L], buttons.buttons[KEYCODE(L)]);
+        my_used_buttons[MOUSE_LEFT].new_press = debounceButton(&my_used_buttons[MOUSE_LEFT], tumEventGetMouseLeft());
+        my_used_buttons[MOUSE_MIDDLE].new_press = debounceButton(&my_used_buttons[MOUSE_MIDDLE], tumEventGetMouseMiddle());
+        my_used_buttons[MOUSE_RIGHT].new_press = debounceButton(&my_used_buttons[MOUSE_RIGHT], tumEventGetMouseRight());
+
         if(debounceButton(my_used_buttons+KEYBOARD_Q, buttons.buttons[KEYCODE(Q)])){
             exit(EXIT_SUCCESS);
         }              
-    }
-    if(debounceButton(&my_used_buttons[MOUSE_LEFT], tumEventGetMouseLeft())
-                || debounceButton(&my_used_buttons[MOUSE_MIDDLE], tumEventGetMouseMiddle()) 
-                ||  debounceButton(&my_used_buttons[MOUSE_RIGHT], tumEventGetMouseRight())){
-        my_used_buttons[KEYBOARD_A].counter = 0;
-        my_used_buttons[KEYBOARD_B].counter = 0;
-        my_used_buttons[KEYBOARD_C].counter = 0;
-        my_used_buttons[KEYBOARD_D].counter = 0;
     }
     xSemaphoreGive(buttons.lock); 
 }
@@ -113,9 +109,18 @@ int getButtonCounter(MY_CODES code){
     return 0;
 }
 
-int getButtonState(MY_CODES code){
+int getDebouncedButtonState(MY_CODES code){
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
         int reading = my_used_buttons[code].new_press;
+        xSemaphoreGive(buttons.lock);
+        return reading;
+    }
+    return 0;
+}
+
+int getContinuousButtonState(MY_CODES code){
+    if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
+        int reading = my_used_buttons[code].button_state;
         xSemaphoreGive(buttons.lock);
         return reading;
     }

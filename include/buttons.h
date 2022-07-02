@@ -55,6 +55,8 @@ void evaluateButtons();
 
 int getButtonCounter(MY_CODES code);
 
-int getButtonState(MY_CODES code);
+int getDebouncedButtonState(MY_CODES code);
+
+int getContinuousButtonState(MY_CODES code);
 
 void resetButtonCounter(MY_CODES code);
