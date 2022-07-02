@@ -26,11 +26,16 @@
 
 static buttons_buffer_t buttons = { 0 };
 static my_button_t my_used_buttons[9];
+//static SDL_Scancode used_buttons[] = {KEYCODE(C)}; t.b.d.
 
 void xGetButtonInput()
 {
+    //static int get_input[SDL_NUM_SCANCODES];
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
         xQueueReceive(buttonInputQueue, &buttons.buttons, 0);
+        /*for(int i=0; i<len(used_buttons); i++){
+            buttons[used_buttons[i]].input = get_input[used_buttons[i]];
+        }*/
         xSemaphoreGive(buttons.lock);
     }
 }
