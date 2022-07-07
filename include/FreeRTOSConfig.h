@@ -80,6 +80,10 @@
 #define configIDLE_SHOULD_YIELD         1
 #define configUSE_CO_ROUTINES           1
 #define configUSE_MUTEXES               1
+#define configUSE_TIMERS                1
+#define configTIMER_TASK_STACK_DEPTH    16
+#define configTIMER_TASK_PRIORITY       1
+#define configTIMER_QUEUE_LENGTH        10
 #define configUSE_TASK_NOTIFICATIONS    1
 #define configUSE_COUNTING_SEMAPHORES   1
 #define configUSE_ALTERNATIVE_API       0

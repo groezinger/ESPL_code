@@ -24,6 +24,7 @@
 #include "AsyncIO.h"
 #include "buttons.h"
 #include <unistd.h>
+#include "FreeRtosUtility.h"
 
 void vApplicationGetIdleTaskMemory( StaticTask_t **ppxIdleTaskTCBBuffer,
                                     StackType_t **ppxIdleTaskStackBuffer,

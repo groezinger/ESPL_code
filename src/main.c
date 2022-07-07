@@ -24,6 +24,7 @@
 #include "AsyncIO.h"
 #include "buttons.h"
 #include "playState.h"
+#include "FreeRtosUtility.h"
 
 #define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
 #define mainGENERIC_STACK_SIZE ((unsigned short)2560)
@@ -43,11 +44,20 @@ typedef struct State{
 static TaskHandle_t DrawTask = NULL;
 static TaskHandle_t PlayerShip = NULL;
 static TaskHandle_t Menu = NULL;
+static TaskHandle_t InititateNewSpGame = NULL;
+static TaskHandle_t GameOver = NULL;
+static TaskHandle_t NextLevel = NULL;
 static TaskHandle_t StateMachine = NULL;
 static SemaphoreHandle_t ScreenLock = NULL;
 static QueueHandle_t StateQueue = NULL;
 static State_t MenuState;
 static State_t PlayState;
+static State_t InititateNewSpGameState;
+static State_t GameOverState;
+static State_t NextLevelState;
+static TimerHandle_t InvaderShotTimer = NULL;
+static TimerHandle_t InvaderDownwardsTimer = NULL;
+static int current_level = 0;
 
 void changeState(volatile TaskHandle_t* current_state_tasks, TaskHandle_t* next_state_tasks)
 {
@@ -66,6 +76,9 @@ void basicSequentialStateMachine(void *pvParameters)
 {
     MenuState.as_tasks[0]=Menu;
     PlayState.as_tasks[0]=PlayerShip;
+    InititateNewSpGameState.as_tasks[0]=InititateNewSpGame;
+    GameOverState.as_tasks[0]=GameOver;
+    NextLevelState.as_tasks[0]=NextLevel;
     State_t current_state; 
     current_state = MenuState; // Default state
     State_t next_state;
@@ -79,7 +92,6 @@ void basicSequentialStateMachine(void *pvParameters)
         // Handle state machine input
         if (StateQueue){
             if (xQueueReceive(StateQueue, &next_state, portMAX_DELAY) == pdTRUE) {
-                printf("until here it works");
                 if (xTaskGetTickCount() - last_change > state_change_period) {
                     changeState(current_state.as_tasks, next_state.as_tasks);
                     last_change = xTaskGetTickCount();
@@ -137,10 +149,10 @@ void vDrawFPS(void)
     sprintf(str, "FPS: %2d", fps);
     if (!tumGetTextSize((char *)str, &text_width, NULL)){
         tumDrawFilledBox(SCREEN_WIDTH - text_width - 10, SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5, text_width,
-                        DEFAULT_FONT_SIZE, White);
+                        DEFAULT_FONT_SIZE, Black);
         tumDrawText(str, SCREEN_WIDTH - text_width - 10,
                     SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5,
-                    Skyblue);
+                    Green);
     }
     tumFontSelectFontFromHandle(cur_font);
     tumFontPutFontHandle(cur_font);
@@ -172,18 +184,36 @@ void vDrawTask(void *pvParameters)
     }
 }
 
-void vPlayerShip(void *pvParameters){
-    InitiateInvaders();    
+void vPlayerShip(void *pvParameters){   
     TickType_t xLastFrameTime = xTaskGetTickCount();
+    xTimerStart(InvaderShotTimer, 0);
+    xTimerStart(InvaderDownwardsTimer, 0);
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             DrawInvaders(xLastFrameTime);
-            DrawPlayerShip();
             DrawBarricades();
+            drawScore();
+            DrawLives();
+            if(checkDeath()){
+                xSemaphoreGive(ScreenLock);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                xSemaphoreTake(ScreenLock, portMAX_DELAY);
+            }
+            if(getPlayerLives()==0){
+                xSemaphoreGive(ScreenLock);
+                xQueueSend(StateQueue, &GameOverState, 0);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+            DrawPlayerShip();
             xSemaphoreGive(ScreenLock);
         }
         xLastFrameTime = xTaskGetTickCount();
+        if(getAliveInvaders()==0){
+            current_level +=1;
+            xQueueSend(StateQueue, &NextLevel, 0);
+        }
         if(getDebouncedButtonState(KEYBOARD_C)){
+            resetCurrentScore();
             xQueueSend(StateQueue, &MenuState, 0);
         }
         vTaskDelay((TickType_t)20);
@@ -193,13 +223,75 @@ void vPlayerShip(void *pvParameters){
 void vMenu(void *pvParameters){
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
-            tumDrawClear(White);
+            tumDrawClear(Black);
+            drawScore();
             xSemaphoreGive(ScreenLock);
         }
         if(getDebouncedButtonState(KEYBOARD_C)){
-            xQueueSend(StateQueue, &PlayState, 0);
+            xQueueSend(StateQueue, &InititateNewSpGameState, 0);
         }
         vTaskDelay((TickType_t)20);
+    }
+}
+
+void vInititateNewSpGame(void *pvParameters){
+    static char new_game_string[20] = "StARTING NEW GAME";
+    static int string_width = 0;
+    while(1){
+        InitiateInvaders(0, 0);
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            tumDrawClear(Black);
+            drawScore();
+            if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
+                tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
+                    SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+        xSemaphoreGive(ScreenLock);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        xQueueSend(StateQueue, &PlayState, 0);
+        }
+    }
+}
+
+void vGameOver(void *pvParameters){
+    static char new_game_string[20] = "GAME OVER";
+    static int string_width = 0;
+    while(1){
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            tumDrawClear(Black);
+            drawScore();
+            if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
+                tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
+                    SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+        xSemaphoreGive(ScreenLock);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        xQueueSend(StateQueue, &MenuState, 0);
+        }
+    }
+}
+
+void vNextLevel(void *pvParameters){
+    static char new_game_string[40] = "Congratulations! Press E for next Level";
+    static int string_width = 0;
+    while(1){
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            tumDrawClear(Black);
+            drawScore();
+            if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
+                tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
+                    SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+            xSemaphoreGive(ScreenLock);
+            if(getDebouncedButtonState(KEYBOARD_E)){
+                InitiateInvaders(1, current_level);
+                xQueueSend(StateQueue, &PlayState, 0);
+            }
+            vTaskDelay(pdMS_TO_TICKS(40));
+        }
     }
 }
 
@@ -233,29 +325,46 @@ int main(int argc, char *argv[])
         goto err_draw_task;
     }
     if (xTaskCreate(vPlayerShip, "PlayerShip", mainGENERIC_STACK_SIZE*2, NULL,
-                    configMAX_PRIORITIES, &PlayerShip) != pdPASS) {
+                    configMAX_PRIORITIES-1, &PlayerShip) != pdPASS) {
         goto err_player_ship;
     }
     if (xTaskCreate(vMenu, "Menu", mainGENERIC_STACK_SIZE*2, NULL,
-                    configMAX_PRIORITIES, &Menu) != pdPASS) {
+                    configMAX_PRIORITIES-1, &Menu) != pdPASS) {
         goto err_menu;
     }
     if (xTaskCreate(basicSequentialStateMachine, "StateMachine", mainGENERIC_STACK_SIZE*2, NULL,
                     configMAX_PRIORITIES, &StateMachine) != pdPASS) {
         goto err_sm;
     }
+    if (xTaskCreate(vInititateNewSpGame, "InititateNewSpGame", mainGENERIC_STACK_SIZE*2, NULL,
+                    configMAX_PRIORITIES-1, &InititateNewSpGame) != pdPASS) {
+        goto err_new_sp_game;
+    }
+    if (xTaskCreate(vGameOver, "GameOver", mainGENERIC_STACK_SIZE*2, NULL,
+                    configMAX_PRIORITIES-1, &GameOver) != pdPASS) {
+        goto err_game_over;
+    }
+    if (xTaskCreate(vNextLevel, "InititateNewSpGame", mainGENERIC_STACK_SIZE*2, NULL,
+                    configMAX_PRIORITIES-1, &NextLevel) != pdPASS) {
+        goto err_next_level;
+    }
 
     ScreenLock = xSemaphoreCreateMutex();
     if(!ScreenLock){
         goto err_screen_lock;
     }
+    InvaderShotTimer = xTimerCreate("InvadershotTimer", pdMS_TO_TICKS(1000), pdTRUE, (void*)0, createInvaderShot);
+    InvaderDownwardsTimer = xTimerCreate("InvaderDownwardsTimer", pdMS_TO_TICKS(2500), pdTRUE, (void*)0, moveInvadersDown);
 
     StateQueue = xQueueCreate(STATE_QUEUE_LENGTH, sizeof(State_t));
     if (!StateQueue) {
         goto err_state_queue;
     }
-   
+    InitiateInvaders(0, 0);
+    vTaskSuspend(NextLevel);
     vTaskSuspend(PlayerShip);
+    vTaskSuspend(InititateNewSpGame);
+    vTaskSuspend(GameOver);
     vTaskStartScheduler();
 
     return EXIT_SUCCESS;
@@ -263,6 +372,12 @@ int main(int argc, char *argv[])
     err_state_queue:
         vSemaphoreDelete(ScreenLock);
     err_screen_lock:
+        vTaskDelete(NextLevel);
+    err_next_level:
+        vTaskDelete(GameOver);
+    err_game_over:
+        vTaskDelete(InititateNewSpGame);
+    err_new_sp_game:
         vTaskDelete(StateMachine);
     err_sm:
         vTaskDelete(Menu);
