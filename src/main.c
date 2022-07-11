@@ -26,16 +26,12 @@
 #include "playState.h"
 #include "FreeRtosUtility.h"
 
-#define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
-#define mainGENERIC_STACK_SIZE ((unsigned short)2560)
-#define PI 3.141
-#define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 #define FPS_AVERAGE_COUNT 50
 #define FPS_FONT "IBMPlexSans-Bold.ttf"
 
 #define STATE_QUEUE_LENGTH 1
 #define STARTING_STATE STATE_ONE
-#define STATE_DEBOUNCE_DELAY 300
+#define STATE_DEBOUNCE_DELAY 100
 
 typedef struct State{
     TaskHandle_t as_tasks[10];
@@ -45,6 +41,7 @@ static TaskHandle_t DrawTask = NULL;
 static TaskHandle_t PlayerShip = NULL;
 static TaskHandle_t Menu = NULL;
 static TaskHandle_t InititateNewSpGame = NULL;
+static TaskHandle_t InititateNewMpGame = NULL;
 static TaskHandle_t GameOver = NULL;
 static TaskHandle_t NextLevel = NULL;
 static TaskHandle_t StateMachine = NULL;
@@ -53,10 +50,9 @@ static QueueHandle_t StateQueue = NULL;
 static State_t MenuState;
 static State_t PlayState;
 static State_t InititateNewSpGameState;
+static State_t InititateNewMpGameState;
 static State_t GameOverState;
 static State_t NextLevelState;
-static TimerHandle_t InvaderShotTimer = NULL;
-static TimerHandle_t InvaderDownwardsTimer = NULL;
 static int current_level = 0;
 
 void changeState(volatile TaskHandle_t* current_state_tasks, TaskHandle_t* next_state_tasks)
@@ -77,6 +73,7 @@ void basicSequentialStateMachine(void *pvParameters)
     MenuState.as_tasks[0]=Menu;
     PlayState.as_tasks[0]=PlayerShip;
     InititateNewSpGameState.as_tasks[0]=InititateNewSpGame;
+    InititateNewMpGameState.as_tasks[0]=InititateNewMpGame;
     GameOverState.as_tasks[0]=GameOver;
     NextLevelState.as_tasks[0]=NextLevel;
     State_t current_state; 
@@ -172,7 +169,6 @@ void vDrawTask(void *pvParameters)
             // guarded with a mutex, mutex must be obtained before accessing the
             // resource and given back when you're finished. If the mutex is not
             // given back then no other task can access the reseource.
-        evaluateButtons(); //evaluate Pressed Buttons
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             tumEventFetchEvents(FETCH_EVENT_BLOCK);
             vDrawFPS();
@@ -186,8 +182,6 @@ void vDrawTask(void *pvParameters)
 
 void vPlayerShip(void *pvParameters){   
     TickType_t xLastFrameTime = xTaskGetTickCount();
-    xTimerStart(InvaderShotTimer, 0);
-    xTimerStart(InvaderDownwardsTimer, 0);
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             DrawInvaders(xLastFrameTime);
@@ -212,7 +206,7 @@ void vPlayerShip(void *pvParameters){
             current_level +=1;
             xQueueSend(StateQueue, &NextLevel, 0);
         }
-        if(getDebouncedButtonState(KEYBOARD_C)){
+        if(getDebouncedButtonState(KEYCODE(C))){
             resetCurrentScore();
             xQueueSend(StateQueue, &MenuState, 0);
         }
@@ -221,24 +215,69 @@ void vPlayerShip(void *pvParameters){
 }
 
 void vMenu(void *pvParameters){
+    static char sp_game_string[40] = "SINGLEPLAYER [C]";
+    static char mp_game_string[40] = "MULTIPLAYER [J]";
+    static char starting_score_string[60];
+    static char infinite_lives_string[30] = "";
+    static int sp_string_width = 0;
+    static int mp_string_width = 0;
+    static int starting_score_width = 0;
+    static int infinite_lives_width = 0;
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            sprintf(starting_score_string, "STARTING SCORE [UP]/[DOWN]: %d", updateStartScore());
+            if(updateInfiniteLives()){
+                strncpy(infinite_lives_string, "INFINITE LIVES: ON", sizeof(infinite_lives_string));
+            } else {
+                strncpy(infinite_lives_string, "INFINITE LIVES: OFF", sizeof(infinite_lives_string));
+            }
             tumDrawClear(Black);
             drawScore();
+            if (!tumGetTextSize((char *)sp_game_string, &sp_string_width, NULL)){
+                tumDrawText(sp_game_string, SCREEN_WIDTH/2 - sp_string_width/2,
+                    SCREEN_HEIGHT*3/5 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+            if (!tumGetTextSize((char *)mp_game_string, &mp_string_width, NULL)){
+                tumDrawText(mp_game_string, SCREEN_WIDTH/2 - mp_string_width/2,
+                    SCREEN_HEIGHT*2/5 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+            if (!tumGetTextSize((char *)mp_game_string, &mp_string_width, NULL)){
+                tumDrawText(mp_game_string, SCREEN_WIDTH/2 - mp_string_width/2,
+                    SCREEN_HEIGHT*2/5 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+            if (!tumGetTextSize((char *)starting_score_string, &starting_score_width, NULL)){
+                tumDrawText(starting_score_string, SCREEN_WIDTH/4 - mp_string_width/2,
+                    SCREEN_HEIGHT*9/10 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+            if (!tumGetTextSize((char *)infinite_lives_string, &infinite_lives_width, NULL)){
+                tumDrawText(infinite_lives_string, SCREEN_WIDTH/4 - infinite_lives_width/2,
+                    SCREEN_HEIGHT*8/10 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
             xSemaphoreGive(ScreenLock);
         }
-        if(getDebouncedButtonState(KEYBOARD_C)){
+        if(getDebouncedButtonState(KEYCODE(C))){
             xQueueSend(StateQueue, &InititateNewSpGameState, 0);
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+        if(getDebouncedButtonState(KEYCODE(J))){
+            xQueueSend(StateQueue, &InititateNewMpGameState, 0);
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
         vTaskDelay((TickType_t)20);
     }
 }
 
 void vInititateNewSpGame(void *pvParameters){
-    static char new_game_string[20] = "StARTING NEW GAME";
+    static char new_game_string[40] = "STARTING NEW SINGLEPLAYER GAME";
     static int string_width = 0;
     while(1){
-        InitiateInvaders(0, 0);
+        startTimer();
+        InitiateInvaders(0, 0, 0);
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             tumDrawClear(Black);
             drawScore();
@@ -250,6 +289,30 @@ void vInititateNewSpGame(void *pvParameters){
         xSemaphoreGive(ScreenLock);
         vTaskDelay(pdMS_TO_TICKS(1000));
         xQueueSend(StateQueue, &PlayState, 0);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
+}
+
+void vInititateNewMpGame(void *pvParameters){
+    static char new_game_string[40] = "STARTING NEW MULTIPLAYER GAME";
+    static int string_width = 0;
+    system("../opponents/space_invaders_opponent &>/dev/null &");
+    while(1){
+        startTimer();
+        InitiateInvaders(0, 0, '1');
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            tumDrawClear(Black);
+            drawScore();
+            if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
+                tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
+                    SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+        xSemaphoreGive(ScreenLock);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        xQueueSend(StateQueue, &PlayState, 0);
+        vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
 }
@@ -278,6 +341,7 @@ void vNextLevel(void *pvParameters){
     static int string_width = 0;
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            increaseDownwardSpeed();
             tumDrawClear(Black);
             drawScore();
             if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
@@ -286,8 +350,8 @@ void vNextLevel(void *pvParameters){
                     Green);
             }
             xSemaphoreGive(ScreenLock);
-            if(getDebouncedButtonState(KEYBOARD_E)){
-                InitiateInvaders(1, current_level);
+            if(getDebouncedButtonState(KEYCODE(E))){
+                InitiateInvaders(1, current_level, 0);
                 xQueueSend(StateQueue, &PlayState, 0);
             }
             vTaskDelay(pdMS_TO_TICKS(40));
@@ -300,7 +364,7 @@ int main(int argc, char *argv[])
     char *bin_folder_path = tumUtilGetBinFolderPath(argv[0]);
 
     printf("Initializing: ");
-
+    initiateTimer();
     if (tumDrawInit(bin_folder_path)) {
         PRINT_ERROR("Failed to initialize drawing");
         goto err_init_drawing;
@@ -344,26 +408,30 @@ int main(int argc, char *argv[])
                     configMAX_PRIORITIES-1, &GameOver) != pdPASS) {
         goto err_game_over;
     }
-    if (xTaskCreate(vNextLevel, "InititateNewSpGame", mainGENERIC_STACK_SIZE*2, NULL,
+    if (xTaskCreate(vNextLevel, "NextLevel", mainGENERIC_STACK_SIZE*2, NULL,
                     configMAX_PRIORITIES-1, &NextLevel) != pdPASS) {
         goto err_next_level;
+    }
+    if (xTaskCreate(vInititateNewMpGame, "InititateNewMpGame", mainGENERIC_STACK_SIZE*2, NULL,
+                    configMAX_PRIORITIES-1, &InititateNewMpGame) != pdPASS) {
+        goto err_new_mp_game;
     }
 
     ScreenLock = xSemaphoreCreateMutex();
     if(!ScreenLock){
         goto err_screen_lock;
     }
-    InvaderShotTimer = xTimerCreate("InvadershotTimer", pdMS_TO_TICKS(1000), pdTRUE, (void*)0, createInvaderShot);
-    InvaderDownwardsTimer = xTimerCreate("InvaderDownwardsTimer", pdMS_TO_TICKS(2500), pdTRUE, (void*)0, moveInvadersDown);
 
     StateQueue = xQueueCreate(STATE_QUEUE_LENGTH, sizeof(State_t));
     if (!StateQueue) {
         goto err_state_queue;
     }
-    InitiateInvaders(0, 0);
+    initMpMode();
+    InitiateInvaders(0, 0, 0);
     vTaskSuspend(NextLevel);
     vTaskSuspend(PlayerShip);
     vTaskSuspend(InititateNewSpGame);
+    vTaskSuspend(InititateNewMpGame);
     vTaskSuspend(GameOver);
     vTaskStartScheduler();
 
@@ -372,6 +440,8 @@ int main(int argc, char *argv[])
     err_state_queue:
         vSemaphoreDelete(ScreenLock);
     err_screen_lock:
+        vTaskDelete(InititateNewMpGame);
+    err_new_mp_game:
         vTaskDelete(NextLevel);
     err_next_level:
         vTaskDelete(GameOver);

@@ -25,27 +25,25 @@
 #define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 
 static buttons_buffer_t buttons = { 0 };
-static my_button_t my_used_buttons[9];
-//static SDL_Scancode used_buttons[] = {KEYCODE(C)}; t.b.d.
 
 void xGetButtonInput()
 {
     //static int get_input[SDL_NUM_SCANCODES];
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-        xQueueReceive(buttonInputQueue, &buttons.buttons, 0);
-        /*for(int i=0; i<len(used_buttons); i++){
-            buttons[used_buttons[i]].input = get_input[used_buttons[i]];
-        }*/
+        xQueueReceive(buttonInputQueue, &buttons.input, 0);
+        if(debounceButton(buttons.buttons+KEYCODE(Q), buttons.input[KEYCODE(Q)])){
+            exit(EXIT_SUCCESS);
+        }  
         xSemaphoreGive(buttons.lock);
     }
 }
 
 int buttonLockInit(){
-    for(int i=0; i< sizeof(my_used_buttons)/ sizeof(my_button_t); i++){
-        my_used_buttons[i].last_debounce_time=0;
-        my_used_buttons[i].counter=0;
-        my_used_buttons[i].button_state=false;
-        my_used_buttons[i].last_button_state=false;
+    for(int i=0; i< sizeof(buttons.buttons)/ sizeof(my_button_t); i++){
+        buttons.buttons[i].last_debounce_time=0;
+        buttons.buttons[i].counter=0;
+        buttons.buttons[i].button_state=false;
+        buttons.buttons[i].last_button_state=false;
     }
     buttons.lock = xSemaphoreCreateMutex();
     xSemaphoreGive(buttons.lock); // Locking mechanism
@@ -79,57 +77,61 @@ bool debounceButton(my_button_t* my_button, int reading){
     return return_value;
 }
 
-void evaluateButtons(){
+int getButtonCounter(SDL_Scancode code){
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-        my_used_buttons[KEYBOARD_A].new_press = debounceButton(&my_used_buttons[KEYBOARD_A], buttons.buttons[KEYCODE(A)]);
-        my_used_buttons[KEYBOARD_B].new_press = debounceButton(&my_used_buttons[KEYBOARD_B], buttons.buttons[KEYCODE(B)]);
-        my_used_buttons[KEYBOARD_C].new_press = debounceButton(&my_used_buttons[KEYBOARD_C], buttons.buttons[KEYCODE(C)]);
-        my_used_buttons[KEYBOARD_D].new_press = debounceButton(&my_used_buttons[KEYBOARD_D], buttons.buttons[KEYCODE(D)]);
-        my_used_buttons[KEYBOARD_E].new_press = debounceButton(&my_used_buttons[KEYBOARD_E], buttons.buttons[KEYCODE(E)]);
-        my_used_buttons[KEYBOARD_J].new_press = debounceButton(&my_used_buttons[KEYBOARD_J], buttons.buttons[KEYCODE(J)]);
-        my_used_buttons[KEYBOARD_K].new_press = debounceButton(&my_used_buttons[KEYBOARD_K], buttons.buttons[KEYCODE(K)]);
-        my_used_buttons[KEYBOARD_L].new_press = debounceButton(&my_used_buttons[KEYBOARD_L], buttons.buttons[KEYCODE(L)]);
-        my_used_buttons[MOUSE_LEFT].new_press = debounceButton(&my_used_buttons[MOUSE_LEFT], tumEventGetMouseLeft());
-        my_used_buttons[MOUSE_MIDDLE].new_press = debounceButton(&my_used_buttons[MOUSE_MIDDLE], tumEventGetMouseMiddle());
-        my_used_buttons[MOUSE_RIGHT].new_press = debounceButton(&my_used_buttons[MOUSE_RIGHT], tumEventGetMouseRight());
-
-        if(debounceButton(my_used_buttons+KEYBOARD_Q, buttons.buttons[KEYCODE(Q)])){
-            exit(EXIT_SUCCESS);
-        }              
-    }
-    xSemaphoreGive(buttons.lock); 
-}
-
-int getButtonCounter(MY_CODES code){
-    if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-        int reading = my_used_buttons[code].counter;
+        int reading = buttons.buttons[code].counter;
         xSemaphoreGive(buttons.lock);
         return reading;
     }
     return 0;
 }
 
-int getDebouncedButtonState(MY_CODES code){
+int getDebouncedButtonState(SDL_Scancode code){
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-        int reading = my_used_buttons[code].new_press;
+        buttons.buttons[code].new_press = debounceButton(&buttons.buttons[code], buttons.input[code]);
+        int reading = buttons.buttons[code].new_press;
         xSemaphoreGive(buttons.lock);
         return reading;
     }
     return 0;
 }
 
-int getContinuousButtonState(MY_CODES code){
+int getContinuousButtonState(SDL_Scancode code){
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-        int reading = my_used_buttons[code].button_state;
+        buttons.buttons[code].new_press = debounceButton(&buttons.buttons[code], buttons.input[code]);
+        int reading = buttons.buttons[code].button_state;
         xSemaphoreGive(buttons.lock);
         return reading;
     }
     return 0;
 }
 
-void resetButtonCounter(MY_CODES code){
+int getDebouncedMouseState(MY_SCANCODE_MOUSE code){
     if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
-        my_used_buttons[code].counter = 0;
+        switch (code)
+        {
+        case 1:
+            buttons.buttons[code].new_press = debounceButton(&buttons.buttons[code], tumEventGetMouseLeft());
+            break;
+        case 2:
+            buttons.buttons[code].new_press = debounceButton(&buttons.buttons[code], tumEventGetMouseRight());
+            break;
+        case 3:
+            buttons.buttons[code].new_press = debounceButton(&buttons.buttons[code], tumEventGetMouseMiddle());
+            break;
+        default:
+            break;
+        }
+        int reading = buttons.buttons[code].new_press;
+        xSemaphoreGive(buttons.lock);
+        return reading;
+    }
+    return 0;
+}
+
+void resetButtonCounter(SDL_Scancode code){
+    if (xSemaphoreTake(buttons.lock, portMAX_DELAY) == pdTRUE) {
+        buttons.buttons[code].counter = 0;
         xSemaphoreGive(buttons.lock);
     }
 }

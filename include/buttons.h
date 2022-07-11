@@ -1,18 +1,10 @@
-//Codes to evaluate corresponding array position in my_used_buttons[]
+#define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
+
 typedef enum{
-    MOUSE_LEFT = 0,
-    MOUSE_MIDDLE = 1,
-    MOUSE_RIGHT = 2,
-    KEYBOARD_A = 3,
-    KEYBOARD_B = 4,
-    KEYBOARD_C = 5,
-    KEYBOARD_D = 6,
-    KEYBOARD_E = 7,
-    KEYBOARD_K = 8,
-    KEYBOARD_L = 9,
-    KEYBOARD_J = 10,
-    KEYBOARD_Q = 11
-} MY_CODES;
+    MY_SCANCODE_MOUSE_LEFT = 1,
+    MY_SCANCODE_MOUSE_RIGHT = 2,
+    MY_SCANCODE_MOUSE_MIDDLE = 3
+} MY_SCANCODE_MOUSE;
 
 //struct to save all attributes of a single button
 typedef struct my_button{
@@ -25,7 +17,8 @@ typedef struct my_button{
 
 //buttons buffer to evaluate of input
 typedef struct buttons_buffer {
-    unsigned char buttons[SDL_NUM_SCANCODES];
+    unsigned char input[SDL_NUM_SCANCODES];
+    my_button_t buttons[SDL_NUM_SCANCODES];
     SemaphoreHandle_t lock;
 } buttons_buffer_t;
 
@@ -48,15 +41,12 @@ parameter:
 returns: 1 for button is really pressed(long enough) and 0 for button has not really been pressed or not long enough */
 bool debounceButton(my_button_t* my_button, int reading);
 
-/* function to take desired action for the single buttons when they have been pressed/not pressed
-paramter: my_button_t* my_used_buttons: array of my_button_t with all the used buttons. Single button can be accessed for example by [KEYBOARD_A] = [3]
-returns: nothing */
-void evaluateButtons();
+int getButtonCounter(SDL_Scancode code);
 
-int getButtonCounter(MY_CODES code);
+int getDebouncedButtonState(SDL_Scancode code);
 
-int getDebouncedButtonState(MY_CODES code);
+int getContinuousButtonState(SDL_Scancode code);
 
-int getContinuousButtonState(MY_CODES code);
+int getDebouncedMouseState(MY_SCANCODE_MOUSE code);
 
-void resetButtonCounter(MY_CODES code);
+void resetButtonCounter(SDL_Scancode code);

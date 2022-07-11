@@ -1,7 +1,9 @@
-#define INVADER_ROWS 2
-#define INVADER_COLUMNS 2
+#define INVADER_ROWS 5
+#define INVADER_COLUMNS 8
 #define TOP_LEFT_INVADER_X SCREEN_WIDTH/9
-#define TOP_LEFT_INVADER_Y SCREEN_HEIGHT/8
+#define TOP_LEFT_INVADER_Y SCREEN_HEIGHT/4
+#define mainGENERIC_PRIORITY (tskIDLE_PRIORITY)
+#define mainGENERIC_STACK_SIZE ((unsigned short)2560)
 #define xstr(s) str(s)
 #define str(s) #s
 #define GET(s, d) "INVADER" str(s) str(d) 
@@ -9,8 +11,6 @@
 typedef struct Invader{
     char type;
     char alive;
-    int initial_x;
-    int initial_y;
     int x;
     int y;
     int death_frame_counter;
@@ -34,6 +34,7 @@ typedef struct Invaders{
     int shot_y;
     int shot_active;
     int downward_progress;
+    SemaphoreHandle_t invaders_lock;
 } Invaders_t;
 
 typedef struct Score{
@@ -48,7 +49,7 @@ typedef struct Barrier{
 } Barrier_t;
 
 int DrawInvaders(TickType_t xLastFrameTime);
-int InitiateInvaders(int keep_current_data, int level);
+int InitiateInvaders(int keep_current_data, int level, char mp_game);
 int DrawPlayerShip();
 int DrawBarricades();
 void checkHit(Invader_t *invader);
@@ -63,3 +64,9 @@ void DrawLives();
 void checkBarrierHit();
 void initiateBarriers();
 void resetCurrentScore();
+void initMpMode();
+int updateStartScore();
+int updateInfiniteLives();
+int initiateTimer();
+void startTimer();
+void increaseDownwardSpeed();

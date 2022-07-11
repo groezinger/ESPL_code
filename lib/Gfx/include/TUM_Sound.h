@@ -42,26 +42,14 @@
  * A list of wav filenames which are loaded
  */
 #define FOR_EACH_SAMPLE(SAMPLE)                                                \
-    SAMPLE(a3)                                                             \
-    SAMPLE(a4)                                                             \
-    SAMPLE(a5)                                                             \
-    SAMPLE(b3)                                                             \
-    SAMPLE(b4)                                                             \
-    SAMPLE(c3)                                                             \
-    SAMPLE(c4)                                                             \
-    SAMPLE(c5)                                                             \
-    SAMPLE(d3)                                                             \
-    SAMPLE(d4)                                                             \
-    SAMPLE(d5)                                                             \
-    SAMPLE(e3)                                                             \
-    SAMPLE(e4)                                                             \
-    SAMPLE(e5)                                                             \
-    SAMPLE(f3)                                                             \
-    SAMPLE(f4)                                                             \
-    SAMPLE(f5)                                                             \
-    SAMPLE(g3)                                                             \
-    SAMPLE(g4)                                                             \
-    SAMPLE(g5)
+    SAMPLE(shoot)                                                             \
+    SAMPLE(explosion)                                                             \
+    SAMPLE(invaderkilled)                                                             \
+    SAMPLE(ufo_lowpitch)                                                             \
+    SAMPLE(fastinvader1)                                                             \
+    SAMPLE(fastinvader2)                                                             \
+    SAMPLE(fastinvader3)                                                             \
+    SAMPLE(fastinvader4)                                                             \
 
 /**
  * @enum tumSound_samples_e
