@@ -45,6 +45,7 @@ static TaskHandle_t InititateNewMpGame = NULL;
 static TaskHandle_t GameOver = NULL;
 static TaskHandle_t NextLevel = NULL;
 static TaskHandle_t StateMachine = NULL;
+static TaskHandle_t Pause = NULL;
 static SemaphoreHandle_t ScreenLock = NULL;
 static QueueHandle_t StateQueue = NULL;
 static State_t MenuState;
@@ -53,6 +54,7 @@ static State_t InititateNewSpGameState;
 static State_t InititateNewMpGameState;
 static State_t GameOverState;
 static State_t NextLevelState;
+static State_t PauseState;
 static int current_level = 0;
 
 void changeState(volatile TaskHandle_t* current_state_tasks, TaskHandle_t* next_state_tasks)
@@ -76,6 +78,7 @@ void basicSequentialStateMachine(void *pvParameters)
     InititateNewMpGameState.as_tasks[0]=InititateNewMpGame;
     GameOverState.as_tasks[0]=GameOver;
     NextLevelState.as_tasks[0]=NextLevel;
+    PauseState.as_tasks[0]=Pause;
     State_t current_state; 
     current_state = MenuState; // Default state
     State_t next_state;
@@ -188,12 +191,14 @@ void vPlayerShip(void *pvParameters){
             DrawBarricades();
             drawScore();
             DrawLives();
+            DrawLevel(current_level);
             if(checkDeath()){
                 xSemaphoreGive(ScreenLock);
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 xSemaphoreTake(ScreenLock, portMAX_DELAY);
             }
             if(getPlayerLives()==0){
+                stopTimer();
                 xSemaphoreGive(ScreenLock);
                 xQueueSend(StateQueue, &GameOverState, 0);
                 vTaskDelay(pdMS_TO_TICKS(1000));
@@ -208,7 +213,14 @@ void vPlayerShip(void *pvParameters){
         }
         if(getDebouncedButtonState(KEYCODE(C))){
             resetCurrentScore();
+            stopTimer();
             xQueueSend(StateQueue, &MenuState, 0);
+        }
+        if(getDebouncedButtonState(KEYCODE(P))){
+            resetCurrentScore();
+            stopTimer();
+            xQueueSend(StateQueue, &PauseState, 0);
+            vTaskDelay(20);
         }
         vTaskDelay((TickType_t)20);
     }
@@ -219,6 +231,8 @@ void vMenu(void *pvParameters){
     static char mp_game_string[40] = "MULTIPLAYER [J]";
     static char starting_score_string[60];
     static char infinite_lives_string[30] = "";
+    static char starting_level_string[40];
+    static int starting_level_width = 0;
     static int sp_string_width = 0;
     static int mp_string_width = 0;
     static int starting_score_width = 0;
@@ -227,10 +241,19 @@ void vMenu(void *pvParameters){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             sprintf(starting_score_string, "STARTING SCORE [UP]/[DOWN]: %d", updateStartScore());
             if(updateInfiniteLives()){
-                strncpy(infinite_lives_string, "INFINITE LIVES: ON", sizeof(infinite_lives_string));
+                strncpy(infinite_lives_string, "INFINITE LIVES: [O]N", sizeof(infinite_lives_string));
             } else {
-                strncpy(infinite_lives_string, "INFINITE LIVES: OFF", sizeof(infinite_lives_string));
+                strncpy(infinite_lives_string, "INFINITE LIVES: [O]FF", sizeof(infinite_lives_string));
             }
+            if(getDebouncedButtonState(KEYCODE(H))){
+                current_level += 1;
+                toggleDownwardSpeed(1);
+            }
+            if(getDebouncedButtonState(KEYCODE(L)) && current_level>0){
+                current_level += -1;
+                toggleDownwardSpeed(0);
+            }
+            sprintf(starting_level_string, "STARTING LEVEL [H]IGHER/[L]OWER: %d", current_level+1);
             tumDrawClear(Black);
             drawScore();
             if (!tumGetTextSize((char *)sp_game_string, &sp_string_width, NULL)){
@@ -243,19 +266,19 @@ void vMenu(void *pvParameters){
                     SCREEN_HEIGHT*2/5 - DEFAULT_FONT_SIZE/2,
                     Green);
             }
-            if (!tumGetTextSize((char *)mp_game_string, &mp_string_width, NULL)){
-                tumDrawText(mp_game_string, SCREEN_WIDTH/2 - mp_string_width/2,
-                    SCREEN_HEIGHT*2/5 - DEFAULT_FONT_SIZE/2,
+            if (!tumGetTextSize((char *)starting_level_string, &starting_level_width, NULL)){
+                tumDrawText(starting_level_string, 10,
+                    SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
                     Green);
             }
             if (!tumGetTextSize((char *)starting_score_string, &starting_score_width, NULL)){
-                tumDrawText(starting_score_string, SCREEN_WIDTH/4 - mp_string_width/2,
-                    SCREEN_HEIGHT*9/10 - DEFAULT_FONT_SIZE/2,
+                tumDrawText(starting_score_string, 10,
+                    SCREEN_HEIGHT*18/20 - DEFAULT_FONT_SIZE,
                     Green);
             }
             if (!tumGetTextSize((char *)infinite_lives_string, &infinite_lives_width, NULL)){
-                tumDrawText(infinite_lives_string, SCREEN_WIDTH/4 - infinite_lives_width/2,
-                    SCREEN_HEIGHT*8/10 - DEFAULT_FONT_SIZE/2,
+                tumDrawText(infinite_lives_string, 10,
+                    SCREEN_HEIGHT*19/20 - DEFAULT_FONT_SIZE,
                     Green);
             }
             xSemaphoreGive(ScreenLock);
@@ -276,8 +299,8 @@ void vInititateNewSpGame(void *pvParameters){
     static char new_game_string[40] = "STARTING NEW SINGLEPLAYER GAME";
     static int string_width = 0;
     while(1){
-        startTimer();
-        InitiateInvaders(0, 0, 0);
+        startTimer(current_level);
+        InitiateInvaders(0, current_level, 0);
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             tumDrawClear(Black);
             drawScore();
@@ -299,8 +322,8 @@ void vInititateNewMpGame(void *pvParameters){
     static int string_width = 0;
     system("../opponents/space_invaders_opponent &>/dev/null &");
     while(1){
-        startTimer();
-        InitiateInvaders(0, 0, '1');
+        startTimer(current_level);
+        InitiateInvaders(0, current_level, '1');
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
             tumDrawClear(Black);
             drawScore();
@@ -332,7 +355,32 @@ void vGameOver(void *pvParameters){
         xSemaphoreGive(ScreenLock);
         vTaskDelay(pdMS_TO_TICKS(1000));
         xQueueSend(StateQueue, &MenuState, 0);
+        vTaskDelay(40);
         }
+    }
+}
+
+void vPause(void *pvParameters){
+    static char pause_string[30] = "Pause: Press P to continue...";
+    static int string_width = 0;
+    while(1){
+        if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
+            tumDrawClear(Black);
+            drawScore();
+            DrawLevel(current_level);
+            DrawLives();
+            if (!tumGetTextSize((char *)pause_string, &string_width, NULL)){
+                tumDrawText(pause_string, SCREEN_WIDTH/2 - string_width/2,
+                    SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+                    Green);
+            }
+        }
+        xSemaphoreGive(ScreenLock);
+        if(getDebouncedButtonState(KEYCODE(P))){
+            startTimer(current_level);
+            xQueueSend(StateQueue, &PlayState, 0);
+        }
+        vTaskDelay(pdMS_TO_TICKS(40));
     }
 }
 
@@ -341,7 +389,7 @@ void vNextLevel(void *pvParameters){
     static int string_width = 0;
     while(1){
         if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
-            increaseDownwardSpeed();
+            toggleDownwardSpeed(1);
             tumDrawClear(Black);
             drawScore();
             if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
@@ -412,6 +460,10 @@ int main(int argc, char *argv[])
                     configMAX_PRIORITIES-1, &NextLevel) != pdPASS) {
         goto err_next_level;
     }
+    if (xTaskCreate(vPause, "Pause", mainGENERIC_STACK_SIZE*2, NULL,
+                    configMAX_PRIORITIES-1, &Pause) != pdPASS) {
+        goto err_pause;
+    }
     if (xTaskCreate(vInititateNewMpGame, "InititateNewMpGame", mainGENERIC_STACK_SIZE*2, NULL,
                     configMAX_PRIORITIES-1, &InititateNewMpGame) != pdPASS) {
         goto err_new_mp_game;
@@ -433,6 +485,7 @@ int main(int argc, char *argv[])
     vTaskSuspend(InititateNewSpGame);
     vTaskSuspend(InititateNewMpGame);
     vTaskSuspend(GameOver);
+    vTaskSuspend(Pause);
     vTaskStartScheduler();
 
     return EXIT_SUCCESS;
@@ -440,6 +493,8 @@ int main(int argc, char *argv[])
     err_state_queue:
         vSemaphoreDelete(ScreenLock);
     err_screen_lock:
+        vTaskDelete(Pause);
+    err_pause:
         vTaskDelete(InititateNewMpGame);
     err_new_mp_game:
         vTaskDelete(NextLevel);

@@ -14,13 +14,14 @@ typedef struct Invader{
     int x;
     int y;
     int death_frame_counter;
+    int max_appear;
     sequence_handle_t sequence_handle;
 } Invader_t;
 
 typedef struct PlayerShip{
     int lives;
-    int initial_x;
-    int initial_y;
+    int x;
+    int y;
     int shot_y;
     int shot_x;
     int shot_active;
@@ -30,11 +31,13 @@ typedef struct Invaders{
     int alive_cnt;
     Invader_t invaders[INVADER_ROWS][INVADER_COLUMNS];
     float speed;
+    coord_t shots[3];
     int shot_x;
     int shot_y;
-    int shot_active;
+    int shot_active[3];
     int downward_progress;
     SemaphoreHandle_t invaders_lock;
+    SemaphoreHandle_t shot_lock;
 } Invaders_t;
 
 typedef struct Score{
@@ -53,7 +56,7 @@ int InitiateInvaders(int keep_current_data, int level, char mp_game);
 int DrawPlayerShip();
 int DrawBarricades();
 void checkHit(Invader_t *invader);
-void createInvaderShot();
+void createInvaderShot(int shot_number);
 int checkDeath();
 void moveInvadersDown();
 void drawScore();
@@ -68,5 +71,12 @@ void initMpMode();
 int updateStartScore();
 int updateInfiniteLives();
 int initiateTimer();
-void startTimer();
-void increaseDownwardSpeed();
+void startTimer(int current_leve);
+void toggleDownwardSpeed(int up_down); //0 slower, 1 faster
+void stopTimer();
+void checkOpponentHit(Invader_t *opponent);
+void DrawLevel(int level);
+int checkReachedBarrier(Invader_t *invader);
+void shotOneCallBack();
+void shotTwoCallBack();
+void shotThreeCallBack();

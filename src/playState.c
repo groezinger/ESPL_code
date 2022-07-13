@@ -31,6 +31,7 @@
 #define UDP_BUFFER_SIZE 1024
 #define UDP_RECEIVE_PORT 1234
 #define UDP_TRANSMIT_PORT 1235
+#define DEFAULT_RAND 10
 
 static TaskHandle_t UDPControlTask = NULL;
 static SemaphoreHandle_t HandleUDP = NULL;
@@ -40,6 +41,7 @@ static Invaders_t my_invaders;
 static PlayerShip_t my_player_ship;
 static Invader_t opponent_ship;
 static image_handle_t invaders_spritesheet_image = NULL;
+static image_handle_t opponent_explosion_image = NULL;
 static spritesheet_handle_t invaders_spritesheet = NULL;
 static spritesheet_handle_t barrier_spritesheet = NULL;
 static spritesheet_handle_t opponent_spritesheet = NULL;
@@ -50,9 +52,12 @@ static int sprite_width;
 static Barrier_t barriers[4];
 static char ch_sc = 0;
 static char ch_inf = 0;
-static TimerHandle_t InvaderShotTimer = NULL;
+static char game_state = 0; //1 MP  - 0 SP
+static TimerHandle_t InvaderShotTimerOne = NULL;
+static TimerHandle_t InvaderShotTimerTwo = NULL;
+static TimerHandle_t InvaderShotTimerThree = NULL;
 static TimerHandle_t InvaderDownwardsTimer = NULL;
-static TimerHandle_t InvaderMoveTimer = NULL;
+static TimerHandle_t OpponentShipSpTimer = NULL;
 
 
 
@@ -77,7 +82,9 @@ void UDPHandler(size_t read_size, char *buffer, void *args)
             next_key = INC;
             send_command = 1;
             if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
-                opponent_ship.x += 10;
+                if(opponent_ship.alive){
+                    opponent_ship.x += 20;
+                }
                 xSemaphoreGive(MpLock);
             }
         }
@@ -86,7 +93,9 @@ void UDPHandler(size_t read_size, char *buffer, void *args)
             next_key = DEC;
             send_command = 1;
             if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
-                opponent_ship.x += -10;
+                if(opponent_ship.alive){
+                    opponent_ship.x += -20;
+                }
                 xSemaphoreGive(MpLock);
             }
         }
@@ -126,7 +135,7 @@ void vUDPControlTask(void *pvParameters)
 
     while (1) {
         vTaskDelay(20);
-        signed int diff = my_player_ship.initial_x - opponent_ship.x;
+        signed int diff = my_player_ship.x - opponent_ship.x;
         if (diff > 0) {
             sprintf(buf, "+%d", diff);
         }
@@ -179,19 +188,40 @@ void initiateBarriers(){
     }   
 }
 
-void initiateOpponent(){
+void initiateOpponent(char mp_game){
     if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+        opponent_explosion_image = tumDrawLoadScaledImage("../resources/images/mothership_explosion.png", 0.15);
         opponent_spritesheet =
             tumDrawLoadSpritesheet(invaders_spritesheet_image, 4, 2);
-        opponent_ship.x = SCREEN_WIDTH/2;
+        if(mp_game){
+            opponent_ship.x = SCREEN_WIDTH/2;
+            opponent_ship.alive = 1;
+            xTimerStop(OpponentShipSpTimer, 0);
+        } else{
+            opponent_ship.x = -100;
+            opponent_ship.alive = 0;
+        }
         opponent_ship.y = SCREEN_HEIGHT/12;
+        opponent_ship.max_appear = 1;
+        opponent_ship.death_frame_counter = 0;
+        opponent_ship.type = 3;
         xSemaphoreGive(MpLock); 
     }
 }
 
 void DrawOpponentShip(){
     if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
-        tumDrawSprite(opponent_spritesheet, 3, 0, opponent_ship.x, opponent_ship.y);
+        checkOpponentHit(&opponent_ship);
+        if(opponent_ship.alive && opponent_ship.x > -20){
+            tumDrawSprite(opponent_spritesheet, 3, 0, opponent_ship.x, opponent_ship.y);
+            if(!game_state){
+            opponent_ship.x = opponent_ship.x - 3;
+            }
+        } 
+        else if(opponent_ship.death_frame_counter<30){
+            tumDrawLoadedImage(opponent_explosion_image , opponent_ship.x+5, opponent_ship.y+10);
+            opponent_ship.death_frame_counter += 1;
+        }
         xSemaphoreGive(MpLock);
     }
 }
@@ -199,8 +229,10 @@ void DrawOpponentShip(){
 int InitiateInvaders(int keep_game_data, int level, char mp_game){
     if(!keep_game_data){
         if(mp_game){
+            game_state = 1;
             vTaskResume(UDPControlTask);
         } else {
+            game_state = 0;
             vTaskSuspend(UDPControlTask);
         }
         if(!ch_sc){
@@ -210,6 +242,7 @@ int InitiateInvaders(int keep_game_data, int level, char mp_game){
             my_player_ship.lives = 3;
         }
         Score.score_lock = xSemaphoreCreateMutex();
+        my_invaders.shot_lock = xSemaphoreCreateMutex();
         invaders_spritesheet_image =
             tumDrawLoadImage("../resources/images/invaders_sheet.png");
         tumGetImageSize("../resources/images/invaders_sheet.png", &sprite_width, &sprite_height);
@@ -227,6 +260,7 @@ int InitiateInvaders(int keep_game_data, int level, char mp_game){
         tumDrawAnimationAddSequence(invader_animation, "INVADER_TWO", 0, 4,
                                     SPRITE_SEQUENCE_HORIZONTAL_POS, 2);
     }
+    initiateOpponent(mp_game);
     if(!Score.high_score){
         Score.high_score = 0;
     }
@@ -234,10 +268,18 @@ int InitiateInvaders(int keep_game_data, int level, char mp_game){
         my_player_ship.lives = -1;
     }
     initiateBarriers();
-    initiateOpponent();
-    my_invaders.shot_x = 0;
-    my_invaders.shot_y = 0;
-    my_invaders.shot_active = 0;
+    if(xSemaphoreTake(my_invaders.shot_lock, portMAX_DELAY)==pdTRUE){
+        my_invaders.shots[0].x = 0;
+        my_invaders.shots[0].y = 0;
+        my_invaders.shots[1].x = 0;
+        my_invaders.shots[1].y = 0;
+        my_invaders.shots[2].x = 0;
+        my_invaders.shots[2].y = 0;
+        my_invaders.shot_active[0] = 0;
+        my_invaders.shot_active[1] = 0;
+        my_invaders.shot_active[2] = 0;
+        xSemaphoreGive(my_invaders.shot_lock);
+    }
     my_invaders.alive_cnt=INVADER_COLUMNS*INVADER_ROWS;
     my_invaders.speed = 1.0*(level+1); 
     my_invaders.downward_progress = 0;
@@ -263,8 +305,8 @@ int InitiateInvaders(int keep_game_data, int level, char mp_game){
         }
     }
 
-    my_player_ship.initial_x=SCREEN_WIDTH/2;
-    my_player_ship.initial_y=SCREEN_HEIGHT*9/10;
+    my_player_ship.x=SCREEN_WIDTH/2;
+    my_player_ship.y=SCREEN_HEIGHT*9/10;
     my_player_ship.shot_x = 0;
     my_player_ship.shot_y = 0;
     my_player_ship.shot_active = 0;
@@ -278,14 +320,20 @@ int DrawInvaders(TickType_t xLastFrameTime){
     static int frame_counter = 0;
     tumDrawClear(Black);
     checkBarrierHit();
+    if(xSemaphoreTake(DownwardSignal, 0)==pdTRUE){
+        for(int i=0; i<INVADER_ROWS; i++){
+            for(int j=0; j<INVADER_COLUMNS; j++){
+                    my_invaders.invaders[i][j].y = my_invaders.invaders[i][j].y + 5;
+            }
+        }   
+    }
     for(int i=0; i<INVADER_ROWS; i++){
         for(int j=0; j<INVADER_COLUMNS; j++){
             checkHit(&my_invaders.invaders[i][j]);
             if(my_invaders.invaders[i][j].alive){
+                checkGameOver(&my_invaders.invaders[i][j]);
+                checkReachedBarrier(&my_invaders.invaders[i][j]);
                 my_invaders.invaders[i][j].x = my_invaders.invaders[i][j].x+current_direction*(int)floor(my_invaders.speed)*speed_control;
-                if(xSemaphoreTake(DownwardSignal, 0)==pdTRUE){
-                    my_invaders.invaders[i][j].y = my_invaders.invaders[i][j].y + 5;
-                } 
                 if(my_invaders.invaders[i][j].x < SCREEN_WIDTH/12){
                     next_direction = 1;
                 } else if (my_invaders.invaders[i][j].x > SCREEN_WIDTH*11/12){
@@ -304,12 +352,17 @@ int DrawInvaders(TickType_t xLastFrameTime){
         }
     }
     DrawOpponentShip();
-    if(my_invaders.shot_active==1 && my_invaders.shot_y < SCREEN_HEIGHT){
-        my_invaders.shot_y=my_invaders.shot_y + 5;
-           tumDrawSprite(invaders_spritesheet, 1, 1, my_invaders.shot_x, my_invaders.shot_y);
-    } else {
-        my_invaders.shot_active = 0;
-        my_invaders.shot_y = 0;
+    for(int m=0; m<3; m++){
+        if(xSemaphoreTake(my_invaders.shot_lock, portMAX_DELAY)==pdTRUE){
+            if(my_invaders.shot_active[m]==1 && my_invaders.shots[m].y < SCREEN_HEIGHT){
+                my_invaders.shots[m].y=my_invaders.shots[m].y + 5;
+                tumDrawSprite(invaders_spritesheet, 1, 1, my_invaders.shots[m].x, my_invaders.shots[m].y);
+            } else if (my_invaders.shot_active[m]==1 && my_invaders.shots[m].y > SCREEN_HEIGHT){
+                my_invaders.shot_active[m] = 0;
+                my_invaders.shots[m].y = 0;
+            }
+        xSemaphoreGive(my_invaders.shot_lock);
+        }
     }
     if(frame_counter<2){
         speed_control = 0;
@@ -324,28 +377,39 @@ int DrawInvaders(TickType_t xLastFrameTime){
 
 int DrawPlayerShip(){
     if(getContinuousButtonState(KEYCODE(A))){
-        my_player_ship.initial_x = my_player_ship.initial_x - 2;
+        my_player_ship.x = my_player_ship.x - 2;
     }
     if(getContinuousButtonState(KEYCODE(D))){
-        my_player_ship.initial_x = my_player_ship.initial_x + 2;
+        my_player_ship.x = my_player_ship.x + 2;
     }
-    if(getDebouncedMouseState(MY_SCANCODE_MOUSE_LEFT)){
+    if(getDebouncedButtonState(KEYCODE(SPACE))){
         if(!my_player_ship.shot_active){
             my_player_ship.shot_active = 1;
-            my_player_ship.shot_y=my_player_ship.shot_y + my_player_ship.initial_y;
-            my_player_ship.shot_x = my_player_ship.initial_x;
+            my_player_ship.shot_y=my_player_ship.shot_y + my_player_ship.y;
+            my_player_ship.shot_x = my_player_ship.x;
             tumSoundPlaySample(shoot); //shoot sound
         }
     }
     if(my_player_ship.shot_active==1 && my_player_ship.shot_y >0){
-        my_player_ship.shot_y=my_player_ship.shot_y - 5;
+        my_player_ship.shot_y=my_player_ship.shot_y - 8;
         tumDrawSprite(invaders_spritesheet, 2, 1, my_player_ship.shot_x, my_player_ship.shot_y);
     } else {
         my_player_ship.shot_active = 0;
         my_player_ship.shot_y = 0;
     }
-    tumDrawSprite(invaders_spritesheet, 5, 1, my_player_ship.initial_x, my_player_ship.initial_y);
+    tumDrawSprite(invaders_spritesheet, 5, 1, my_player_ship.x, my_player_ship.y);
     return 0;
+}
+
+opponentAppear(){
+    int my_rand;
+    my_rand = rand() % 10;
+    static int appear_counter = 0;
+    if(my_invaders.alive_cnt < 35 && rand > 7 && appear_counter < opponent_ship.max_appear){
+        opponent_ship.x = SCREEN_WIDTH;
+        opponent_ship.alive = 1;
+        appear_counter +=1;
+    }
 }
 
 int DrawBarricades(){
@@ -372,14 +436,19 @@ void checkBarrierHit(){
         for (int j=0; j<4; j++){
             //for every barrier part
             if(barriers[i].hit_cnt[j] != 4){
-                if(barriers[i].coords[j][0] >= my_invaders.shot_x &&
-                    barriers[i].coords[j][0] - sprite_width <= my_invaders.shot_x &&
-                    barriers[i].coords[j][1] + sprite_height/2 >= my_invaders.shot_y &&
-                    barriers[i].coords[j][1] - sprite_height/2 <= my_invaders.shot_y){
-                        
-                    barriers[i].hit_cnt[j] +=2;
-                    my_invaders.shot_active=0;
-                    my_invaders.shot_y=0;
+                for(int m=0; m<3; m++){
+                    if(xSemaphoreTake(my_invaders.shot_lock, portMAX_DELAY)==pdTRUE){
+                        if(barriers[i].coords[j][0] >= my_invaders.shots[m].x &&
+                            barriers[i].coords[j][0] - sprite_width <= my_invaders.shots[m].x &&
+                            barriers[i].coords[j][1] + sprite_height/2 >= my_invaders.shots[m].y &&
+                            barriers[i].coords[j][1] - sprite_height/2 <= my_invaders.shots[m].y){
+                                
+                            barriers[i].hit_cnt[j] +=2;
+                            my_invaders.shot_active[m]=0;
+                            my_invaders.shots[m].y=0;
+                        }
+                        xSemaphoreGive(my_invaders.shot_lock);
+                    }
                 }
                 if(barriers[i].coords[j][0] >= my_player_ship.shot_x &&
                     barriers[i].coords[j][0] - sprite_width<= my_player_ship.shot_x &&
@@ -390,6 +459,27 @@ void checkBarrierHit(){
                     my_player_ship.shot_active=0;
                     my_player_ship.shot_y=0;
                 } 
+            }
+        }
+    }
+}
+
+void checkOpponentHit(Invader_t *opponent){
+    if(opponent->alive && my_player_ship.shot_active){
+        if(my_player_ship.shot_x < opponent->x+30 &&
+        my_player_ship.shot_x > opponent->x &&
+        my_player_ship.shot_y < opponent->y+10 &&
+        my_player_ship.shot_y > opponent->y-10){
+            opponent->alive = 0;
+            my_player_ship.shot_active=0;
+            my_player_ship.shot_y=0;
+            tumSoundPlaySample(explosion);
+            if(xSemaphoreTake(Score.score_lock, portMAX_DELAY)==pdTRUE){
+                Score.current_score += 100;
+                if(Score.current_score>Score.high_score){
+                    Score.high_score = Score.current_score;
+                }
+                xSemaphoreGive(Score.score_lock);
             }
         }
     }
@@ -411,21 +501,32 @@ void checkHit(Invader_t *invader){
                 my_invaders.speed = 10.0; 
             }
             if(xSemaphoreTake(Score.score_lock, portMAX_DELAY)==pdTRUE){
-                Score.current_score += 20 + abs(invader->type - 2)*10;
+                Score.current_score += 10 + abs(invader->type - 2)*10;
                 if(Score.current_score>Score.high_score){
                     Score.high_score = Score.current_score;
                 }
                 xSemaphoreGive(Score.score_lock);
             }
         }
-    }
-        
+    }      
 }
 
-void createInvaderShot(){
+void shotOneCallBack(){
+    createInvaderShot(0);
+}
+
+void shotTwoCallBack(){
+    createInvaderShot(1);
+}
+
+void shotThreeCallBack(){
+    createInvaderShot(2);
+}
+
+void createInvaderShot(int shot_number){
     int random_column;
     Invader_t* shooting_invader = NULL;
-    if(!my_invaders.shot_active){
+    if(!my_invaders.shot_active[shot_number]){
         while(!shooting_invader){
             random_column = rand() % INVADER_COLUMNS;
             for(int i=0; i<INVADER_ROWS; i++){
@@ -434,42 +535,67 @@ void createInvaderShot(){
                 }
             }
         }
-        my_invaders.shot_active = 1;
-        my_invaders.shot_x = shooting_invader->x;
-        my_invaders.shot_y = shooting_invader->y;
+        if(xSemaphoreTake(my_invaders.shot_lock, portMAX_DELAY)==pdTRUE){
+            my_invaders.shot_active[shot_number] = 1;
+            my_invaders.shots[shot_number].x = shooting_invader->x;
+            my_invaders.shots[shot_number].y = shooting_invader->y;
+            xSemaphoreGive(my_invaders.shot_lock);
+        }
     }
 }
 
 
 int checkDeath(){
-    if(my_invaders.shot_active){
-        if(my_invaders.shot_x < my_player_ship.initial_x+10 && my_invaders.shot_x > my_player_ship.initial_x-10
-        && my_invaders.shot_y < my_player_ship.initial_y+10 && my_invaders.shot_y > my_player_ship.initial_y-10){
-            tumDrawBox(my_player_ship.initial_x-40, my_player_ship.initial_y-40, 80, 80, Black);
-            tumDrawSprite(invaders_spritesheet, 0, 1, my_player_ship.initial_x, my_player_ship.initial_y);
-            my_player_ship.lives = my_player_ship.lives-1;
-            if(my_player_ship.lives==0){
-                Score.current_score=0;
-                ch_inf = 0;
-                ch_sc = 0;
+    for(int m=0; m<3; m++){
+        if(my_invaders.shot_active[m]){
+            if(xSemaphoreTake(my_invaders.shot_lock, portMAX_DELAY)==pdTRUE){
+                if(my_invaders.shots[m].x < my_player_ship.x+10 && my_invaders.shots[m].x > my_player_ship.x-10
+                && my_invaders.shots[m].y < my_player_ship.y+10 && my_invaders.shots[m].y > my_player_ship.y-10){
+                    tumDrawBox(my_player_ship.x-40, my_player_ship.y-40, 80, 80, Black);
+                    tumDrawSprite(invaders_spritesheet, 0, 1, my_player_ship.x, my_player_ship.y);
+                    my_player_ship.lives = my_player_ship.lives-1;
+                    tumSoundPlaySample(explosion);
+                    my_player_ship.x = SCREEN_WIDTH/2;
+                    my_player_ship.y = SCREEN_HEIGHT*9/10;
+                    my_invaders.shot_active[m]=0;
+                    my_invaders.shots[m].y=0;
+                    if(my_player_ship.lives==0){
+                        Score.current_score=0;
+                        ch_inf = 0;
+                        ch_sc = 0;
+                    }
+                    xSemaphoreGive(my_invaders.shot_lock);
+                    return 1;
+                }
+                xSemaphoreGive(my_invaders.shot_lock);
             }
-            tumSoundPlaySample(explosion);
-            my_player_ship.initial_x = SCREEN_WIDTH/2;
-            my_player_ship.initial_y = SCREEN_HEIGHT*9/10;
-            my_invaders.shot_active=0;
-            my_invaders.shot_y=0;
-            return 1;
         }
     }
     return 0;
 }
 
 void checkGameOver(Invader_t *invader){
-    if(invader->y > SCREEN_HEIGHT*8/10){
+    if(invader->y > SCREEN_HEIGHT*9/10){
         my_player_ship.lives = 0;
         Score.current_score = 0;
     }
 }
+
+int checkReachedBarrier(Invader_t *invader){
+    if(invader->y > SCREEN_HEIGHT*15/20){
+        for(int i=0; i<4; i++){
+        //for every barrier
+            for (int j=0; j<4; j++){
+                //for every barrier part
+                barriers[i].hit_cnt[j] =4;
+            }
+        }
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 void moveInvadersDown(){
     xSemaphoreGive(DownwardSignal);
 }
@@ -483,12 +609,12 @@ void drawScore(){
         sprintf(current_score, "CURRENT SCORE: %d", Score.current_score);
         sprintf(high_score, "HIGH SCORE: %d", Score.high_score);
         if (!tumGetTextSize((char *)current_score, &current_score_width, NULL)){
-            tumDrawText(current_score, current_score_width/2 + 10,
-                    DEFAULT_FONT_SIZE * 1.5 + 10,
+            tumDrawText(current_score, SCREEN_WIDTH/2 - (current_score_width/2),
+                    DEFAULT_FONT_SIZE * 1.5,
                     Green);
         }
         if (!tumGetTextSize((char *)high_score, &high_score_width, NULL)){
-            tumDrawText(high_score, SCREEN_WIDTH - high_score_width - 10,
+            tumDrawText(high_score, SCREEN_WIDTH - high_score_width - DEFAULT_RAND,
                     DEFAULT_FONT_SIZE * 1.5,
                     Green);
         }
@@ -505,10 +631,21 @@ void DrawLives(){
         strncpy(lives_string, "LIVES: INFINITE", sizeof(lives_string));
     }
     if (!tumGetTextSize((char *)lives_string, &lives_width, NULL)){
-        tumDrawText(lives_string, lives_width + 10,
+        tumDrawText(lives_string, DEFAULT_RAND,
                     SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5,
                     Green);
     }
+}
+
+void DrawLevel(int level){
+    static char level_string[20] = { 0 };
+    static int level_width = 0;
+    sprintf(level_string, "LEVEL: %d", level+1);
+    if (!tumGetTextSize((char *)level_string, &level_width, NULL)){
+        tumDrawText(level_string, 10,
+                    DEFAULT_FONT_SIZE * 1.5,
+                    Green);
+    }    
 }
 
 int getPlayerLives(){
@@ -552,18 +689,40 @@ int updateInfiniteLives(){
 
 int initiateTimer(){
     DownwardSignal = xSemaphoreCreateMutex();
-    InvaderShotTimer = xTimerCreate("InvadershotTimer", pdMS_TO_TICKS(1000), pdTRUE, (void*)0, createInvaderShot);
+    InvaderShotTimerOne = xTimerCreate("InvadershotTimer", pdMS_TO_TICKS(1000), pdTRUE, (void*)0, shotOneCallBack);
+    InvaderShotTimerTwo = xTimerCreate("InvadershotTimer", pdMS_TO_TICKS(800), pdTRUE, (void*)0, shotTwoCallBack);
+    InvaderShotTimerThree = xTimerCreate("InvadershotTimer", pdMS_TO_TICKS(700), pdTRUE, (void*)0, shotThreeCallBack);
     InvaderDownwardsTimer = xTimerCreate("InvaderDownwardsTimer", pdMS_TO_TICKS(3000), pdTRUE, (void*)0, moveInvadersDown);
+    OpponentShipSpTimer = xTimerCreate("OpponentShipSpTimer", pdMS_TO_TICKS(3000), pdTRUE, (void*)0, opponentAppear);
     return 0;
 }
 
-void startTimer(){
-    xTimerStart(InvaderShotTimer, 0);
+void startTimer(int current_level){
+    //lock timers with semaphores tbd
+    xTimerStart(InvaderShotTimerOne, 0);
+    if(current_level>0){
+        xTimerStart(InvaderShotTimerTwo, 0);
+    } else if (current_level>1){
+        xTimerStart(InvaderShotTimerThree, 0);
+    }
     xTimerStart(InvaderDownwardsTimer, 0);
+    xTimerStart(OpponentShipSpTimer, 0);
 }
 
-void increaseDownwardSpeed(){
-    static int ms = 3000;
-    ms += -200;
+void stopTimer(){
+    xTimerStop(InvaderShotTimerOne, 0);
+    xTimerStop(InvaderShotTimerTwo, 0);
+    xTimerStop(InvaderShotTimerThree, 0);
+    xTimerStop(InvaderDownwardsTimer, 0);
+    xTimerStop(OpponentShipSpTimer, 0);
+}
+
+void toggleDownwardSpeed(int up_down){
+    static int ms = 2800;
+    if(up_down){
+        ms += -200;
+    } else {
+        ms += 200;
+    }
     xTimerChangePeriod(InvaderDownwardsTimer, pdMS_TO_TICKS(ms), 0);
 }
