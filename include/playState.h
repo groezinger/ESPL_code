@@ -15,6 +15,7 @@ typedef struct Invader{
     int y;
     int death_frame_counter;
     int max_appear;
+    int appear_counter;
     sequence_handle_t sequence_handle;
 } Invader_t;
 
@@ -40,12 +41,6 @@ typedef struct Invaders{
     SemaphoreHandle_t shot_lock;
 } Invaders_t;
 
-typedef struct Score{
-    int high_score;
-    int current_score;
-    SemaphoreHandle_t score_lock;
-} Score_t;
-
 typedef struct Barrier{
     int coords[4][2];
     int hit_cnt[4];
@@ -54,21 +49,18 @@ typedef struct Barrier{
 int DrawInvaders(TickType_t xLastFrameTime);
 int InitiateInvaders(int keep_current_data, int level, char mp_game);
 int DrawPlayerShip();
-int DrawBarricades();
 void checkHit(Invader_t *invader);
 void createInvaderShot(int shot_number);
 int checkDeath();
 void moveInvadersDown();
-void drawScore();
 void checkGameOver(Invader_t *invader);
 int getPlayerLives();
 int getAliveInvaders();
 void DrawLives();
 void checkBarrierHit();
 void initiateBarriers();
-void resetCurrentScore();
 void initMpMode();
-int updateStartScore();
+void updateStartScore();
 int updateInfiniteLives();
 int initiateTimer();
 void startTimer(int current_leve);
@@ -80,3 +72,8 @@ int checkReachedBarrier(Invader_t *invader);
 void shotOneCallBack();
 void shotTwoCallBack();
 void shotThreeCallBack();
+void resumeMpAI();
+void pauseMpAI();
+void setMpDifficulty(int level);
+void lifeIncrease();
+char checkAiRunning();
