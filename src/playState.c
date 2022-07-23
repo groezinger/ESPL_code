@@ -115,6 +115,7 @@ static TimerHandle_t InvaderShotTimerTwo = NULL;
 static TimerHandle_t InvaderShotTimerThree = NULL;
 static TimerHandle_t InvaderDownwardsTimer = NULL;
 static TimerHandle_t OpponentShipSpTimer = NULL;
+static TimerHandle_t  MovingSoundTimer = NULL;
 
 //aIo related
 aIO_handle_t udp_soc_receive = NULL, udp_soc_transmit = NULL;
@@ -764,6 +765,10 @@ int updateInfiniteLives(){
     return return_value;
 }
 
+void playMovingSound(){
+    tumSoundPlaySample(fastinvader4);
+}
+
 int initiateTimer(){
     DownwardSignal = xSemaphoreCreateMutex();
     if(!DownwardSignal){
@@ -789,8 +794,14 @@ int initiateTimer(){
     if(!OpponentShipSpTimer){
         goto err_sp_opponent;
     }
+    MovingSoundTimer = xTimerCreate("MovingSound", pdMS_TO_TICKS(500), pdTRUE, (void*)0, playMovingSound);
+    if(!MovingSoundTimer){
+        goto err_moving_sound;
+    }
     return 0;
 
+    err_moving_sound:
+        xTimerDelete(OpponentShipSpTimer, 0);
     err_sp_opponent:
         xTimerDelete(InvaderDownwardsTimer, 0);
     err_downward:
@@ -811,6 +822,7 @@ void exitTimers(){
         xTimerDelete(InvaderShotTimerThree, 0);
         xTimerDelete(InvaderShotTimerTwo, 0);
         xTimerDelete(InvaderShotTimerOne, 0);
+        xTimerDelete(MovingSoundTimer, 0);
         vSemaphoreDelete(DownwardSignal);
 }
 
@@ -824,6 +836,7 @@ void startTimer(){
         }
         xTimerStart(InvaderDownwardsTimer, 0);
         xTimerStart(OpponentShipSpTimer, 0);
+        xTimerStart(MovingSoundTimer, 0);
         }
     xSemaphoreGive(game_config.game_lock);
 }
@@ -834,6 +847,7 @@ void stopTimer(){
     xTimerStop(InvaderShotTimerThree, 0);
     xTimerStop(InvaderDownwardsTimer, 0);
     xTimerStop(OpponentShipSpTimer, 0);
+    xTimerStop(MovingSoundTimer, 0);
 }
 
 void toggleDownwardSpeed(int up_down){
