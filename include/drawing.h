@@ -1,4 +1,4 @@
-void drawMenuState(int current_level);
+void drawMenuState();
 
 void drawPause();
 

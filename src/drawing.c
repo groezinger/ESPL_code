@@ -26,7 +26,7 @@
 
 #include "playState.h"
 #include "score.h"
-#include "menu.h"
+#include "drawing.h"
 
 #define FPS_AVERAGE_COUNT 50
 #define FPS_FONT "IBMPlexSans-Bold.ttf"
@@ -154,7 +154,7 @@ void drawLevel(){
     }    
 }
 
-void drawMenuState(int current_level){
+void drawMenuState(){
     static char sp_game_string[40] = "SINGLEPLAYER [C]";
     static char mp_game_string[40] = "MULTIPLAYER [J]";
     static char controls_string[40] = "CONTROLS:";
@@ -180,7 +180,7 @@ void drawMenuState(int current_level){
     } else {
         strncpy(infinite_lives_string, "INFINITE LIVES: [O]FF", sizeof(infinite_lives_string));
     }
-    sprintf(starting_level_string, "STARTING LEVEL [H]IGHER/[L]OWER: %d", current_level+1);
+    sprintf(starting_level_string, "STARTING LEVEL [H]IGHER/[L]OWER: %d", getCurrentLevel()+1);
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
         drawScore(1);
@@ -366,7 +366,7 @@ int initMyDrawing(){
     title_image = tumDrawLoadScaledImage("../resources/images/title_picture.jpg", 0.2);
     playership_lives_image = tumDrawLoadScaledImage("../resources/images/invader_ship_image.png", 0.7);
     if (xTaskCreate(vDrawTask, "DrawTask", mainGENERIC_STACK_SIZE*2, NULL,
-                    configMAX_PRIORITIES-5, &DrawTask) != pdPASS) {
+                    mainGENERIC_PRIORITY, &DrawTask) != pdPASS) {
         goto err_draw_task;
     }
     ScreenLock = xSemaphoreCreateMutex();

@@ -25,7 +25,7 @@
 #include "buttons.h"
 #include "playState.h"
 #include "score.h"
-#include "menu.h"
+#include "drawing.h"
 #include "FreeRtosUtility.h"
 
 #define STATE_QUEUE_LENGTH 1
@@ -112,6 +112,8 @@ void vPlay(void *pvParameters){
             vTaskDelay(pdMS_TO_TICKS(100));
         }
         if(getAliveInvaders()==0){
+            stopTimer();
+            pauseMpAI();
             xQueueSend(StateQueue, &NextLevel, 0);
             vTaskDelay(pdMS_TO_TICKS(100));
         }
@@ -143,7 +145,7 @@ void vMenu(void *pvParameters){
             toggleDownwardSpeed(0);
             toggleCurrentLevel(0);
         }
-        drawMenuState(getCurrentLevel());       //getCurrentLevel
+        drawMenuState();     
         if(getDebouncedButtonState(KEYCODE(C))){
             xQueueSend(StateQueue, &InititateNewSpGameState, 0);
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -228,16 +230,19 @@ void vAiNotRunning(void *pvParameters){
 
 void vNextLevel(void *pvParameters){
     while(1){
-        //current_level +=1;
-        toggleCurrentLevel(1);
-        toggleDownwardSpeed(1);
         drawNextLevel();
         if(getDebouncedButtonState(KEYCODE(E))){
+            //current_level +=1;
+            toggleCurrentLevel(1);
+            startTimer();
+            resumeMpAI();
+            toggleDownwardSpeed(1);
             setMpDifficulty();
             initiateInvaders(1, None);
+            vTaskDelay(20);
             xQueueSend(StateQueue, &PlayState, 0);
         }
-        vTaskDelay(pdMS_TO_TICKS(40));
+        vTaskDelay(20);
     }
 }
 

@@ -34,8 +34,8 @@
 #define UDP_TRANSMIT_PORT 1235
 
 #define DEFAULT_RAND 10
-#define INVADER_ROWS 5
-#define INVADER_COLUMNS 8
+#define INVADER_ROWS 2
+#define INVADER_COLUMNS 2
 #define TOP_LEFT_INVADER_X SCREEN_WIDTH/(INVADER_COLUMNS+1)
 #define TOP_LEFT_INVADER_Y SCREEN_HEIGHT/4
 #define OPPONENT_SHIP_HEIGHT SCREEN_HEIGHT/6
@@ -208,7 +208,7 @@ void vUDPControlTask(void *pvParameters)
             if(my_player_ship.shot_active){
                 sprintf(buf, "ATTACKING");
             } else {
-                sprintf(buf, "PASSIVE"); //tbd lock here
+                sprintf(buf, "PASSIVE"); 
             }
 
             if(my_player_ship.shot_active != last_shot_state){
@@ -339,7 +339,7 @@ void initiateOpponent(mode_t mode, int level){
 
 void lifeIncrease(){
     static int counter=1;
-    if(getCurrentScore()>LIFE_INCREASE_SCORE*counter){
+    if(getCurrentScore()>=LIFE_INCREASE_SCORE*counter){
         counter += 1;
         my_player_ship.lives += 1;
     }
@@ -613,9 +613,16 @@ void createInvaderShot(int shot_number){
     int random_column;
     Invader_t* shooting_invader = NULL;
     if(xSemaphoreTake(game_config.game_lock, portMAX_DELAY)==pdTRUE){
-        if(!my_invaders.shot_active[shot_number]){
+        if(!my_invaders.shot_active[shot_number] && my_invaders.alive_cnt>0){
             while(!shooting_invader){
-                random_column = rand() % (INVADER_COLUMNS-1);
+                random_column = rand() % INVADER_COLUMNS;
+                if(random_column == INVADER_COLUMNS){
+                    //the way rand() is implemented it can generate the upper value
+                    //but the chance is nearly 0 
+                    //so if only Invader of highest column is alive - game could hang
+                    //this handles rare case of highest generated number
+                    random_column += -1;
+                }
                 for(int i=0; i<INVADER_ROWS; i++){
                     if(my_invaders.invaders[i][random_column].alive){
                         shooting_invader = &my_invaders.invaders[i][random_column];
@@ -680,7 +687,11 @@ int getPlayerLives(){
 int getAliveInvaders(){
     int return_value=0;
     if(xSemaphoreTake(game_config.game_lock, portMAX_DELAY)==pdTRUE){
-        return_value = my_invaders.alive_cnt;
+        if(game_config.mode==Multiplayer){
+            return_value = my_invaders.alive_cnt + opponent_ship.alive;
+        } else {
+            return_value = my_invaders.alive_cnt;
+        }
     }
     xSemaphoreGive(game_config.game_lock);
     return return_value;
