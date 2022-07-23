@@ -27,6 +27,7 @@
 #include "playState.h"
 #include "score.h"
 #include "drawing.h"
+#include "FreeRtosUtility.h"
 
 #define FPS_AVERAGE_COUNT 50
 #define FPS_FONT "IBMPlexSans-Bold.ttf"

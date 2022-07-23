@@ -22,9 +22,41 @@
 #include "AsyncIO.h"
 #include "buttons.h"
 
-#define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
+//struct to save all attributes of a single button
+typedef struct my_button{
+    int last_debounce_time;
+    int counter;
+    bool button_state;
+    bool last_button_state;
+    bool new_press;
+} my_button_t;
+
+//buttons buffer to evaluate of input
+typedef struct buttons_buffer {
+    unsigned char input[SDL_NUM_SCANCODES];
+    my_button_t buttons[SDL_NUM_SCANCODES];
+    SemaphoreHandle_t lock;
+} buttons_buffer_t;
 
 static buttons_buffer_t buttons = { 0 };
+
+bool debounceButton(my_button_t* my_button, int reading){
+    bool return_value = false;
+    if (reading != my_button->last_button_state){
+        my_button->last_debounce_time = xTaskGetTickCount();
+    }
+    if((xTaskGetTickCount() - my_button->last_debounce_time)>50){
+        if(reading != my_button->button_state){
+            my_button->button_state = reading;
+            if(my_button->button_state){
+                return_value = true;
+                my_button->counter +=1;
+            }
+        }
+    }
+    my_button->last_button_state = reading;
+    return return_value;
+}
 
 void xGetButtonInput()
 {
@@ -57,24 +89,6 @@ int buttonLockInit(){
 
 void buttonLockExit(){
     vSemaphoreDelete(buttons.lock);
-}
-
-bool debounceButton(my_button_t* my_button, int reading){
-    bool return_value = false;
-    if (reading != my_button->last_button_state){
-        my_button->last_debounce_time = xTaskGetTickCount();
-    }
-    if((xTaskGetTickCount() - my_button->last_debounce_time)>50){
-        if(reading != my_button->button_state){
-            my_button->button_state = reading;
-            if(my_button->button_state){
-                return_value = true;
-                my_button->counter +=1;
-            }
-        }
-    }
-    my_button->last_button_state = reading;
-    return return_value;
 }
 
 int getButtonCounter(SDL_Scancode code){

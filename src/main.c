@@ -161,7 +161,7 @@ void vMenu(void *pvParameters){
 void vInititateNewSpGame(void *pvParameters){
     while(1){
         startTimer();
-        initiateInvaders(0, SinglePlayer);
+        initiateNewGame(0, SinglePlayer);
         drawStartSp();
         vTaskDelay(pdMS_TO_TICKS(1000));
         xQueueSend(StateQueue, &PlayState, 0);
@@ -174,7 +174,7 @@ void vInititateNewMpGame(void *pvParameters){
         startTimer();
         resumeMpAI();
         setMpDifficulty();
-        initiateInvaders(0, Multiplayer);
+        initiateNewGame(0, Multiplayer);
         drawStartMp();
         vTaskDelay(pdMS_TO_TICKS(1000));
         if(checkAiRunning()){
@@ -238,7 +238,7 @@ void vNextLevel(void *pvParameters){
             resumeMpAI();
             toggleDownwardSpeed(1);
             setMpDifficulty();
-            initiateInvaders(1, None);
+            initiateNewGame(1, None);
             vTaskDelay(20);
             xQueueSend(StateQueue, &PlayState, 0);
         }
@@ -316,7 +316,7 @@ int main(int argc, char *argv[])
     initiateTimer();
     initScore(); 
     initMpMode();
-    initiateInvaders(0, None);
+    initiateNewGame(0, None);
     vTaskSuspend(NextLevel);
     vTaskSuspend(Play);
     vTaskSuspend(InititateNewSpGame);

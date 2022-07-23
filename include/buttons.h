@@ -1,52 +1,88 @@
+/**
+ * @file score.h
+ * @author Maximilian Groezinger
+ * @date 23 July 2022
+ * @brief Functions to handle the Playing State of SpaceInvadersGame
+ *
+ * @section licence_sec Licence
+ * @verbatim
+ ----------------------------------------------------------------------
+ Copyright (C) Maximilian Groezinger, 2022
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ any later version.
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ ----------------------------------------------------------------------
+ @endverbatim
+ */
 #define KEYCODE(CHAR) SDL_SCANCODE_##CHAR
 
+//these values are not set by SDL_SCANCODES so using them for mouse buttons
 typedef enum{
     MY_SCANCODE_MOUSE_LEFT = 1,
     MY_SCANCODE_MOUSE_RIGHT = 2,
     MY_SCANCODE_MOUSE_MIDDLE = 3
 } MY_SCANCODE_MOUSE;
 
-//struct to save all attributes of a single button
-typedef struct my_button{
-    int last_debounce_time;
-    int counter;
-    bool button_state;
-    bool last_button_state;
-    bool new_press;
-} my_button_t;
-
-//buttons buffer to evaluate of input
-typedef struct buttons_buffer {
-    unsigned char input[SDL_NUM_SCANCODES];
-    my_button_t buttons[SDL_NUM_SCANCODES];
-    SemaphoreHandle_t lock;
-} buttons_buffer_t;
-
-/*Function to initiate button lock
-returns: 0 for success or 1 for failure */
+/**
+ * @brief initializes Buttons
+ *
+ */
 int buttonLockInit();
 
-/*Function to delete ButtonLock
-returns: nothing */
+/**
+ * @brief deletes Buttons after Failure
+ *
+ */
 void buttonLockExit();
 
-/*Function to get ButtonInput
-returns: nothing */
+/**
+ * @brief update all Button Inputs
+ *
+ */
 void xGetButtonInput();
 
-/*function to debounce button
-parameter:
-    my_button_t my_button: button which should be debounced
-    int reading: current reading of buttons value (1 pressed, 0 not pressed)
-returns: 1 for button is really pressed(long enough) and 0 for button has not really been pressed or not long enough */
-bool debounceButton(my_button_t* my_button, int reading);
-
+/**
+ * @brief get counter value of button presses
+ *
+ */
 int getButtonCounter(SDL_Scancode code);
 
+/**
+ * @brief get debounced Button Value
+ *
+ * @param code SDL_Scancode which button to check
+ * 
+ * @return //1 pressed, 0 not pressed
+ */
 int getDebouncedButtonState(SDL_Scancode code);
 
+/**
+ * @brief get continuos/not debounced Button Value
+ *
+ * @param code SDL_Scancode which button to check
+ * 
+ * @return //1 pressed, 0 not pressed
+ */
 int getContinuousButtonState(SDL_Scancode code);
 
+/**
+ * @brief get debounced Mouse Button Value
+ *
+ * @param code MY_SCANCODE_Mouse which button to check
+ * 
+ * @return //1 pressed, 0 not pressed
+ */
 int getDebouncedMouseState(MY_SCANCODE_MOUSE code);
 
+/**
+ * @brief reset Button Counter to 0
+ *
+ */
 void resetButtonCounter(SDL_Scancode code);

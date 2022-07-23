@@ -26,6 +26,7 @@
 
 #include "playState.h"
 #include "score.h"
+#include "FreeRtosUtility.h"
 
 
 /** AsyncIO related */
@@ -34,8 +35,8 @@
 #define UDP_TRANSMIT_PORT 1235
 
 #define DEFAULT_RAND 10
-#define INVADER_ROWS 2
-#define INVADER_COLUMNS 2
+#define INVADER_ROWS 5
+#define INVADER_COLUMNS 8
 #define TOP_LEFT_INVADER_X SCREEN_WIDTH/(INVADER_COLUMNS+1)
 #define TOP_LEFT_INVADER_Y SCREEN_HEIGHT/4
 #define OPPONENT_SHIP_HEIGHT SCREEN_HEIGHT/6
@@ -130,7 +131,7 @@ static Invader_t opponent_ship;
 static Barrier_t barriers[4];
 
 
-
+//Multiplayer UDP related
 // ------------------------------------------------
 
 void UDPHandler(size_t read_size, char *buffer, void *args)
@@ -290,13 +291,18 @@ void initMpMode(){
     vTaskSuspend(UDPControlTask);
 }
 // ------------------------------------------------------------------------------
-void initGameConfig(){
+int initGameConfig(){
     game_config.increased_start_score = 0;
     game_config.infinite_lives = 0;
     game_config.last_received_ai_response = -6000; //last received AI Response Start Value
     game_config.mode = None;
     game_config.level = 0;
     game_config.game_lock = xSemaphoreCreateMutex();
+    if(game_config.game_lock){
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 
@@ -337,57 +343,7 @@ void initiateOpponent(mode_t mode, int level){
     opponent_ship.type = 3;
 }
 
-void lifeIncrease(){
-    static int counter=1;
-    if(getCurrentScore()>=LIFE_INCREASE_SCORE*counter){
-        counter += 1;
-        my_player_ship.lives += 1;
-    }
-}
-
-void checkOpponentHit(){
-    if(opponent_ship.alive && my_player_ship.shot_active){
-        if(my_player_ship.shot_x + my_player_ship.shot_hitbox_alignment < opponent_ship.x+my_invaders.hitbox_width*2 &&
-        my_player_ship.shot_x + my_player_ship.shot_hitbox_alignment > opponent_ship.x &&
-        my_player_ship.shot_y + my_player_ship.shot_hitbox_alignment< opponent_ship.y+ my_invaders.hitbox_width &&
-        my_player_ship.shot_y + my_player_ship.shot_hitbox_alignment > opponent_ship.y){
-            opponent_ship.alive = 0;
-            opponent_ship.appear_counter = opponent_ship.max_appear;
-            my_player_ship.shot_active=0;
-            my_player_ship.shot_y=0;
-            tumSoundPlaySample(explosion);
-            lifeIncrease();
-            increaseScore(100, game_config.mode);
-        }
-    }
-}
-
-void DrawOpponentShip(){
-    static opponent_cmd_t current_key = NONE;
-    if (NextKeyQueue) {
-        xQueueReceive(NextKeyQueue, &current_key, 0);
-    }
-    checkOpponentHit();
-    if(opponent_ship.alive && opponent_ship.x > -20){
-        tumDrawSprite(opponent_spritesheet, 3, 0, opponent_ship.x, opponent_ship.y);
-        if(game_config.mode==SinglePlayer){
-            opponent_ship.x = opponent_ship.x - 2;
-        } else {
-            if(current_key == DEC && opponent_ship.x>2){
-                opponent_ship.x = opponent_ship.x - 2;
-            } else if(current_key == INC && opponent_ship.x<(SCREEN_WIDTH-70)){
-                opponent_ship.x = opponent_ship.x + 2;
-            }
-        }
-    } 
-    else if(opponent_ship.death_frame_counter<30 && opponent_ship.x > -20){
-        //coordinate alignment because Image is not exact same size as sprite
-        tumDrawLoadedImage(opponent_explosion_image , opponent_ship.x+5, opponent_ship.y+10);
-        opponent_ship.death_frame_counter += 1;
-    }
-}
-
-int initiateInvaders(int keep_game_data, game_mode_t mode){
+int initiateNewGame(int keep_game_data, game_mode_t mode){
     if(xSemaphoreTake(game_config.game_lock, portMAX_DELAY)==pdTRUE){
         if(!keep_game_data){
             game_config.mode = mode;
@@ -468,6 +424,31 @@ int initiateInvaders(int keep_game_data, game_mode_t mode){
     return 0;
 }
 
+void lifeIncrease(){
+    static int counter=1;
+    if(getCurrentScore()>=LIFE_INCREASE_SCORE*counter){
+        counter += 1;
+        my_player_ship.lives += 1;
+    }
+}
+
+void checkOpponentHit(){
+    if(opponent_ship.alive && my_player_ship.shot_active){
+        if(my_player_ship.shot_x + my_player_ship.shot_hitbox_alignment < opponent_ship.x+my_invaders.hitbox_width*2 &&
+        my_player_ship.shot_x + my_player_ship.shot_hitbox_alignment > opponent_ship.x &&
+        my_player_ship.shot_y + my_player_ship.shot_hitbox_alignment< opponent_ship.y+ my_invaders.hitbox_width &&
+        my_player_ship.shot_y + my_player_ship.shot_hitbox_alignment > opponent_ship.y){
+            opponent_ship.alive = 0;
+            opponent_ship.appear_counter = opponent_ship.max_appear;
+            my_player_ship.shot_active=0;
+            my_player_ship.shot_y=0;
+            tumSoundPlaySample(explosion);
+            lifeIncrease();
+            increaseScore(100, game_config.mode);
+        }
+    }
+}
+
 int checkDeath(){
     for(int m=0; m<3; m++){
         if(my_invaders.shot_active[m]){
@@ -494,12 +475,39 @@ int checkDeath(){
     return 0;
 }
 
+void DrawOpponentShip(){
+    static opponent_cmd_t current_key = NONE;
+    if (NextKeyQueue) {
+        xQueueReceive(NextKeyQueue, &current_key, 0);
+    }
+    checkOpponentHit();
+    if(opponent_ship.alive && opponent_ship.x > -20){
+        tumDrawSprite(opponent_spritesheet, 3, 0, opponent_ship.x, opponent_ship.y);
+        if(game_config.mode==SinglePlayer){
+            opponent_ship.x = opponent_ship.x - 2;
+        } else {
+            if(current_key == DEC && opponent_ship.x>2){
+                opponent_ship.x = opponent_ship.x - 2;
+            } else if(current_key == INC && opponent_ship.x<(SCREEN_WIDTH-70)){
+                opponent_ship.x = opponent_ship.x + 2;
+            }
+        }
+    } 
+    else if(opponent_ship.death_frame_counter<30 && opponent_ship.x > -20){
+        //coordinate alignment because Image is not exact same size as sprite
+        tumDrawLoadedImage(opponent_explosion_image , opponent_ship.x+5, opponent_ship.y+10);
+        opponent_ship.death_frame_counter += 1;
+    }
+}
+
 int DrawPlayerShip(){
     if(!checkDeath()){
-        if(getContinuousButtonState(KEYCODE(A))){
+        if(getContinuousButtonState(KEYCODE(A)) &&
+            my_player_ship.x-2 > 0){
             my_player_ship.x = my_player_ship.x - 2;
         }
-        if(getContinuousButtonState(KEYCODE(D))){
+        if(getContinuousButtonState(KEYCODE(D)) &&
+            my_player_ship.x+my_player_ship.hitbox_width+2<SCREEN_WIDTH){
             my_player_ship.x = my_player_ship.x + 2;
         }
         if(getDebouncedButtonState(KEYCODE(SPACE))){
