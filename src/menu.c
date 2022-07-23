@@ -33,6 +33,7 @@
 
 static SemaphoreHandle_t ScreenLock = NULL;
 static TaskHandle_t DrawTask = NULL;
+static image_handle_t title_image = NULL;
 
 void vDrawFPS(void)
 {
@@ -136,14 +137,15 @@ void drawMenuState(int current_level){
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
         drawScore();
+        tumDrawLoadedImage(title_image, SCREEN_WIDTH/2-120, SCREEN_HEIGHT/10);
         if (!tumGetTextSize((char *)sp_game_string, &sp_string_width, NULL)){
-            tumDrawText(sp_game_string, SCREEN_WIDTH/2 - sp_string_width/2,
-                        SCREEN_HEIGHT*3/5 - DEFAULT_FONT_SIZE/2,
+            tumDrawText(sp_game_string, SCREEN_WIDTH/4 - sp_string_width/2,
+                        SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
                         Green);
         }
         if (!tumGetTextSize((char *)mp_game_string, &mp_string_width, NULL)){
-            tumDrawText(mp_game_string, SCREEN_WIDTH/2 - mp_string_width/2,
-                        SCREEN_HEIGHT*2/5 - DEFAULT_FONT_SIZE/2,
+            tumDrawText(mp_game_string, SCREEN_WIDTH*3/4 - mp_string_width/2,
+                        SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
                         Green);
         }
         if (!tumGetTextSize((char *)starting_level_string, &starting_level_width, NULL)){
@@ -166,15 +168,22 @@ void drawMenuState(int current_level){
 }
 
 void drawPause(){
-    static char pause_string[30] = "Pause: Press P to continue...";
+    static char pause_string[30] = "PRESS [P] TO CONTINUE";
+    static char menu_string[30] = "PRESS [M] TO RETURN TO MENU";
     static int string_width = 0;
+    static int menu_string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
         drawScore();
-        DrawLives();
+        drawLives();
         if (!tumGetTextSize((char *)pause_string, &string_width, NULL)){
             tumDrawText(pause_string, SCREEN_WIDTH/2 - string_width/2,
-                        SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+                        SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE*2,
+                        Green);
+        }
+        if (!tumGetTextSize((char *)menu_string, &menu_string_width, NULL)){
+            tumDrawText(menu_string, SCREEN_WIDTH/2 - menu_string_width/2,
+                        SCREEN_HEIGHT/2 + DEFAULT_FONT_SIZE,
                         Green);
         }
         xSemaphoreGive(ScreenLock);
@@ -182,15 +191,22 @@ void drawPause(){
 }
 
 void drawAiNotRunning(){
-    static char pause_string[80] = "AI not running: Start AI and then press P to continue...";
-    static int string_width = 0;
+    static char pause_string[80] = "AI NOT RUNNING - START AI AND PRESS [P] TO CONTINUE";
+    static char menu_string[30] = "PRESS [M] TO RETURN TO MENU";
+    static int pause_string_width = 0;
+    static int menu_string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
         drawScore();
-        DrawLives();
-        if (!tumGetTextSize((char *)pause_string, &string_width, NULL)){
-            tumDrawText(pause_string, SCREEN_WIDTH/2 - string_width/2,
-                        SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
+        drawLives();
+        if (!tumGetTextSize((char *)pause_string, &pause_string_width, NULL)){
+            tumDrawText(pause_string, SCREEN_WIDTH/2 - pause_string_width/2,
+                        SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE*2,
+                        Green);
+        }
+        if (!tumGetTextSize((char *)menu_string, &menu_string_width, NULL)){
+            tumDrawText(menu_string, SCREEN_WIDTH/2 - menu_string_width/2,
+                        SCREEN_HEIGHT/2 + DEFAULT_FONT_SIZE,
                         Green);
         }
         xSemaphoreGive(ScreenLock);
@@ -213,7 +229,7 @@ void drawGameOver(){
 }
 
 void drawNextLevel(){
-    static char new_game_string[40] = "Congratulations! Press E for next Level";
+    static char new_game_string[50] = "CONGRATULATIONS! PRESS [E] FOR NEXT LEVEL";
     static int string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
@@ -258,23 +274,24 @@ void drawStartSp(){
 }
 
 void drawPlay(int current_level){
-    TickType_t xLastFrameTime = xTaskGetTickCount();
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
-        DrawInvaders(xLastFrameTime);
-        drawScore();
-        DrawLives();
-        DrawLevel(current_level);
-        if(checkDeath()){
+        if(drawInvaders()){ //returns 1 if playerShip was hit
+            drawScore();
+            drawLives();
+            drawLevel(current_level);
             xSemaphoreGive(ScreenLock);
             vTaskDelay(pdMS_TO_TICKS(1000));
             xSemaphoreTake(ScreenLock, portMAX_DELAY);
         }
-        DrawPlayerShip();
+        drawScore();
+        drawLives();
+        drawLevel(current_level);
         xSemaphoreGive(ScreenLock);
     }
 }
 
 int initMyDrawing(){
+    title_image = tumDrawLoadScaledImage("../resources/images/title_picture.jpg", 0.2);
     if (xTaskCreate(vDrawTask, "DrawTask", mainGENERIC_STACK_SIZE*2, NULL,
                     configMAX_PRIORITIES-5, &DrawTask) != pdPASS) {
         goto err_draw_task;

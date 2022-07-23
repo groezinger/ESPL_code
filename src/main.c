@@ -29,13 +29,13 @@
 #include "FreeRtosUtility.h"
 
 #define STATE_QUEUE_LENGTH 1
-#define STARTING_STATE STATE_ONE
 #define STATE_DEBOUNCE_DELAY 100
+#define STATE_SWITCH_DELAY 50
 
 typedef struct State{
-    TaskHandle_t as_tasks[10];
+    TaskHandle_t as_task;
 } State_t;
-static TaskHandle_t PlayerShip = NULL;
+static TaskHandle_t Play = NULL;
 static TaskHandle_t Menu = NULL;
 static TaskHandle_t InititateNewSpGame = NULL;
 static TaskHandle_t InititateNewMpGame = NULL;
@@ -55,14 +55,11 @@ static State_t PauseState;
 static State_t AiNotRunningState;
 static int current_level = 0;
 
-void changeState(volatile TaskHandle_t* current_state_tasks, TaskHandle_t* next_state_tasks)
+void changeState(TaskHandle_t* current_state_task, TaskHandle_t* next_state_task)
 {
-    for(int i=0; i<1; i++){
-        vTaskSuspend(*(current_state_tasks + i));
-    }
-    for(int j=0; j<1; j++){
-        vTaskResume(*(next_state_tasks + j));
-    }
+    vTaskSuspend(*current_state_task);
+    vTaskDelay(STATE_SWITCH_DELAY);
+    vTaskResume(*next_state_task);
 }
 
 /*
@@ -70,14 +67,14 @@ void changeState(volatile TaskHandle_t* current_state_tasks, TaskHandle_t* next_
  */
 void basicSequentialStateMachine(void *pvParameters)
 {
-    MenuState.as_tasks[0]=Menu;
-    PlayState.as_tasks[0]=PlayerShip;
-    InititateNewSpGameState.as_tasks[0]=InititateNewSpGame;
-    InititateNewMpGameState.as_tasks[0]=InititateNewMpGame;
-    GameOverState.as_tasks[0]=GameOver;
-    NextLevelState.as_tasks[0]=NextLevel;
-    PauseState.as_tasks[0]=Pause;
-    AiNotRunningState.as_tasks[0]=AiNotRunning;
+    MenuState.as_task=Menu;
+    PlayState.as_task=Play;
+    InititateNewSpGameState.as_task=InititateNewSpGame;
+    InititateNewMpGameState.as_task=InititateNewMpGame;
+    GameOverState.as_task=GameOver;
+    NextLevelState.as_task=NextLevel;
+    PauseState.as_task=Pause;
+    AiNotRunningState.as_task=AiNotRunning;
     State_t current_state; 
     current_state = MenuState; // Default state
     State_t next_state;
@@ -92,7 +89,7 @@ void basicSequentialStateMachine(void *pvParameters)
         if (StateQueue){
             if (xQueueReceive(StateQueue, &next_state, portMAX_DELAY) == pdTRUE) {
                 if (xTaskGetTickCount() - last_change > state_change_period) {
-                    changeState(current_state.as_tasks, next_state.as_tasks);
+                    changeState(&current_state.as_task, &next_state.as_task);
                     last_change = xTaskGetTickCount();
                     current_state = next_state;
                 }
@@ -101,9 +98,10 @@ void basicSequentialStateMachine(void *pvParameters)
     }       
 }
 
-void vPlayerShip(void *pvParameters){   
+void vPlay(void *pvParameters){   
     while(1){
         if(checkAiRunning() == 0){
+            stopTimer();
             xQueueSend(StateQueue, &AiNotRunningState, 0);
             vTaskDelay(200);
         }
@@ -118,7 +116,7 @@ void vPlayerShip(void *pvParameters){
             xQueueSend(StateQueue, &NextLevel, 0);
         }
         drawPlay(current_level);
-        if(getDebouncedButtonState(KEYCODE(C))){
+        if(getDebouncedButtonState(KEYCODE(M))){
             resetCurrentScore();
             stopTimer();
             pauseMpAI();
@@ -160,7 +158,7 @@ void vMenu(void *pvParameters){
 void vInititateNewSpGame(void *pvParameters){
     while(1){
         startTimer(current_level);
-        InitiateInvaders(0, current_level, 0);
+        initiateInvaders(0, current_level, 1);
         drawStartSp();
         vTaskDelay(pdMS_TO_TICKS(1000));
         xQueueSend(StateQueue, &PlayState, 0);
@@ -173,10 +171,14 @@ void vInititateNewMpGame(void *pvParameters){
         startTimer(current_level);
         resumeMpAI();
         setMpDifficulty(current_level+1);
-        InitiateInvaders(0, current_level, '1');
+        initiateInvaders(0, current_level, 2);
         drawStartMp();
         vTaskDelay(pdMS_TO_TICKS(1000));
-        xQueueSend(StateQueue, &PlayState, 0);
+        if(checkAiRunning()){
+            xQueueSend(StateQueue, &PlayState, 0);
+        } else {
+            xQueueSend(StateQueue, &AiNotRunningState, 0);
+        }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
@@ -193,11 +195,15 @@ void vGameOver(void *pvParameters){
 void vPause(void *pvParameters){
     while(1){
         drawPause();
-        DrawLevel(current_level);
+        drawLevel(current_level);
         if(getDebouncedButtonState(KEYCODE(P))){
             startTimer(current_level);
             resumeMpAI();
             xQueueSend(StateQueue, &PlayState, 0);
+        }
+        if(getDebouncedButtonState(KEYCODE(M))){
+            resetCurrentScore();
+            xQueueSend(StateQueue, &MenuState, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(40));
     }
@@ -206,10 +212,14 @@ void vPause(void *pvParameters){
 void vAiNotRunning(void *pvParameters){
     while(1){
         drawAiNotRunning();
-        DrawLevel(current_level);
-        if(getDebouncedButtonState(KEYCODE(P))){
+        drawLevel(current_level);
+        if(getDebouncedButtonState(KEYCODE(M))){
+            resetCurrentScore();
+            pauseMpAI();
+            xQueueSend(StateQueue, &MenuState, 0);
+        }
+        if(getDebouncedButtonState(KEYCODE(P)) && checkAiRunning()){
             startTimer(current_level);
-            resumeMpAI();
             xQueueSend(StateQueue, &PlayState, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(40));
@@ -222,7 +232,7 @@ void vNextLevel(void *pvParameters){
         drawNextLevel();
         if(getDebouncedButtonState(KEYCODE(E))){
             setMpDifficulty(current_level+1);
-            InitiateInvaders(1, current_level, 0);
+            initiateInvaders(1, current_level, 0);
             xQueueSend(StateQueue, &PlayState, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(40));
@@ -253,8 +263,8 @@ int main(int argc, char *argv[])
         PRINT_ERROR("Failed to create buttons lock");
         goto err_buttons_lock;
     }
-    if (xTaskCreate(vPlayerShip, "PlayerShip", mainGENERIC_STACK_SIZE*2, NULL,
-                    configMAX_PRIORITIES-1, &PlayerShip) != pdPASS) {
+    if (xTaskCreate(vPlay, "Play", mainGENERIC_STACK_SIZE*2, NULL,
+                    configMAX_PRIORITIES-1, &Play) != pdPASS) {
         goto err_player_ship;
     }
     if (xTaskCreate(vMenu, "Menu", mainGENERIC_STACK_SIZE*2, NULL,
@@ -298,9 +308,9 @@ int main(int argc, char *argv[])
     initiateTimer();
     initScore(); 
     initMpMode();
-    InitiateInvaders(0, 0, 0);
+    initiateInvaders(0, 0, 0);
     vTaskSuspend(NextLevel);
-    vTaskSuspend(PlayerShip);
+    vTaskSuspend(Play);
     vTaskSuspend(InititateNewSpGame);
     vTaskSuspend(InititateNewMpGame);
     vTaskSuspend(GameOver);
@@ -327,7 +337,7 @@ int main(int argc, char *argv[])
     err_sm:
         vTaskDelete(Menu);
     err_menu:
-        vTaskDelete(PlayerShip);
+        vTaskDelete(Play);
     err_player_ship:
         buttonLockExit();
     err_buttons_lock:
