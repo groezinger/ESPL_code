@@ -99,6 +99,7 @@ void basicSequentialStateMachine(void *pvParameters)
 
 void vPlay(void *pvParameters){   
     while(1){
+        drawPlay();
         if(checkAiRunning() == 0){
             stopTimer();
             xQueueSend(StateQueue, &AiNotRunningState, 0);
@@ -114,7 +115,6 @@ void vPlay(void *pvParameters){
             xQueueSend(StateQueue, &NextLevel, 0);
             vTaskDelay(pdMS_TO_TICKS(100));
         }
-        drawPlay();
         if(getDebouncedButtonState(KEYCODE(M))){
             resetCurrentScore();
             stopTimer();
@@ -266,7 +266,7 @@ int main(int argc, char *argv[])
         goto err_buttons_lock;
     }
     if (xTaskCreate(vPlay, "Play", mainGENERIC_STACK_SIZE*2, NULL,
-                    configMAX_PRIORITIES-1, &Play) != pdPASS) {
+                    configMAX_PRIORITIES, &Play) != pdPASS) {
         goto err_player_ship;
     }
     if (xTaskCreate(vMenu, "Menu", mainGENERIC_STACK_SIZE*2, NULL,

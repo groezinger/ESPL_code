@@ -192,7 +192,6 @@ void vUDPControlTask(void *pvParameters)
     printf("UDP socket opened on port %d\n", port);
 
     while (1) {
-        vTaskDelay(20);
         if (xSemaphoreTake(game_config.game_lock, portMAX_DELAY) == pdTRUE){
             signed int diff = my_player_ship.x - opponent_ship.x;
             if (my_player_ship.x > opponent_ship.x) {
@@ -216,31 +215,34 @@ void vUDPControlTask(void *pvParameters)
                 aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, buf,
                             strlen(buf));
                 last_shot_state = my_player_ship.shot_active;
-            }
+           }
         }
         xSemaphoreGive(game_config.game_lock);
+        vTaskDelay(20);
     }
 }
 
 char checkAiRunning(){
-    int return_value = 0;
     if (xSemaphoreTake(game_config.game_lock, portMAX_DELAY) == pdTRUE){
         if(game_config.mode==Multiplayer){
             for(int i=0; i<10; i++){
                 if((xTaskGetTickCount()-game_config.last_received_ai_response) < AI_MAX_RESPONSE_TIME){
-                    return_value = 1;
-                }
-                //send value to AI to make it respond if running
-                aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "+0",
-                            strlen("+0"));       
-                vTaskDelay(100);
+                    xSemaphoreGive(game_config.game_lock);
+                    return 1;   
+                } else {
+                    //send value to AI to make it respond if running
+                    aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "+0",
+                            strlen("+0"));
+                    vTaskDelay(100);
+                }    
             }
         } else {
-            return_value = 1;
+            xSemaphoreGive(game_config.game_lock);
+            return 1;
         }
     }
     xSemaphoreGive(game_config.game_lock);
-    return return_value;
+    return 0;
 }
 
 void setMpDifficulty(){
@@ -282,7 +284,7 @@ void initMpMode(){
     HandleUDP = xSemaphoreCreateMutex();
     NextKeyQueue = xQueueCreate(1, sizeof(opponent_cmd_t));
     if (xTaskCreate(vUDPControlTask, "UdpControlTask", mainGENERIC_STACK_SIZE*2, NULL,
-                    configMAX_PRIORITIES-1, &UDPControlTask) != pdPASS) {
+                    configMAX_PRIORITIES-5, &UDPControlTask) != pdPASS) {
         exit(EXIT_FAILURE); 
     }
     vTaskSuspend(UDPControlTask);

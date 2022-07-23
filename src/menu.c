@@ -82,9 +82,9 @@ void vDrawFPS(void)
 
     sprintf(str, "FPS: %2d", fps);
     if (!tumGetTextSize((char *)str, &text_width, NULL)){
-        tumDrawFilledBox(SCREEN_WIDTH - text_width - 10, SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5, text_width,
+        tumDrawFilledBox(SCREEN_WIDTH - text_width - DEFAULT_RAND, SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5, text_width,
                         DEFAULT_FONT_SIZE, Black);
-        tumDrawText(str, SCREEN_WIDTH - text_width - 10,
+        tumDrawText(str, SCREEN_WIDTH - text_width - DEFAULT_RAND,
                     SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5,
                     Green);
     }
@@ -148,7 +148,7 @@ void drawLevel(){
     static int level_width = 0;
     sprintf(level_string, "LEVEL: %d", getCurrentLevel()+1);
     if (!tumGetTextSize((char *)level_string, &level_width, NULL)){
-        tumDrawText(level_string, 10,
+        tumDrawText(level_string, DEFAULT_RAND,
                     DEFAULT_FONT_SIZE * 1.5,
                     Green);
     }    
