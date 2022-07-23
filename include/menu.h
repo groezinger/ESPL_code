@@ -12,6 +12,6 @@ void drawStartMp();
 
 void drawStartSp();
 
-void drawPlay(int current_level);
+void drawPlay();
 
 int initMyDrawing();

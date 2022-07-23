@@ -34,8 +34,8 @@
 #define UDP_TRANSMIT_PORT 1235
 
 #define DEFAULT_RAND 10
-#define INVADER_ROWS 2
-#define INVADER_COLUMNS 2
+#define INVADER_ROWS 5
+#define INVADER_COLUMNS 8
 #define TOP_LEFT_INVADER_X SCREEN_WIDTH/(INVADER_COLUMNS+1)
 #define TOP_LEFT_INVADER_Y SCREEN_HEIGHT/4
 #define OPPONENT_SHIP_HEIGHT SCREEN_HEIGHT/6
@@ -56,9 +56,9 @@ typedef struct Game{
     game_mode_t mode;
     char infinite_lives;
     char increased_start_score;
-    char level;
-    char keep_game_data;
+    int level;
     int last_received_ai_response;
+    SemaphoreHandle_t game_lock;
 } Game_t;
 
 typedef struct Invader{
@@ -70,8 +70,6 @@ typedef struct Invader{
     int max_appear;
     int appear_counter;
     sequence_handle_t sequence_handle;
-    int hitbox_height;
-    int hitbox_width;
 } Invader_t;
 
 typedef struct PlayerShip{
@@ -116,6 +114,8 @@ static SemaphoreHandle_t DownwardSignal = NULL;
 static Invaders_t my_invaders;
 static PlayerShip_t my_player_ship;
 static Invader_t opponent_ship;
+static Game_t game_config;
+static Barrier_t barriers[4];
 static image_handle_t invaders_spritesheet_image = NULL;
 static image_handle_t opponent_explosion_image = NULL;
 static image_handle_t playership_lives_image = NULL;
@@ -123,8 +123,6 @@ static spritesheet_handle_t invaders_spritesheet = NULL;
 static spritesheet_handle_t barrier_spritesheet = NULL;
 static spritesheet_handle_t opponent_spritesheet = NULL;
 static animation_handle_t invader_animation = NULL;
-static Game_t game_config;
-static Barrier_t barriers[4];
 static TimerHandle_t InvaderShotTimerOne = NULL;
 static TimerHandle_t InvaderShotTimerTwo = NULL;
 static TimerHandle_t InvaderShotTimerThree = NULL;
@@ -222,8 +220,8 @@ void vUDPControlTask(void *pvParameters)
                             strlen(buf));
                 last_shot_state = my_player_ship.shot_active;
             }
-            xSemaphoreGive(MpLock);
         }
+        xSemaphoreGive(MpLock);
     }
 }
 
@@ -233,9 +231,12 @@ char checkAiRunning(){
             if((xTaskGetTickCount()-game_config.last_received_ai_response) < AI_MAX_RESPONSE_TIME){
                 return 1;
             }
-            //send value to AI to make it respond if running
-            aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "+0",
-                        strlen("+0"));       
+            if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+                //send value to AI to make it respond if running
+                aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "+0",
+                        strlen("+0"));
+            }
+            xSemaphoreGive(MpLock);       
             vTaskDelay(100);
         }
         return 0;
@@ -244,25 +245,37 @@ char checkAiRunning(){
     }
 }
 
-void setMpDifficulty(int level){
+void setMpDifficulty(){
     static char buf[50];
-    if(level>=3){
-        //max difficulty is 3
-        level= 3;
+    static int mp_difficulty = 1;
+    if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+        if(game_config.level>=2){
+            //max difficulty is 3
+            mp_difficulty= 3;
+        } else {
+            mp_difficulty = game_config.level+1;
+        }
+        sprintf(buf, "D%d", mp_difficulty);
+        aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, buf,
+                            strlen(buf));
     }
-    sprintf(buf, "D%d", level);
-    aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, buf,
-                         strlen(buf));
+    xSemaphoreGive(MpLock);
 }
 
 void pauseMpAI(){
-    aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "PAUSE",
-                         strlen("PAUSE"));
+    if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+        aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "PAUSE",
+                            strlen("PAUSE"));
+    }
+    xSemaphoreGive(MpLock);
 }
 
 void resumeMpAI(){
-    aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "RESUME",
-                         strlen("RESUME"));
+    if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+        aIOSocketPut(UDP, NULL, UDP_TRANSMIT_PORT, "RESUME",
+                            strlen("RESUME"));
+    }
+    xSemaphoreGive(MpLock);
 }
 
 
@@ -270,7 +283,6 @@ void resumeMpAI(){
 void initMpMode(){
     HandleUDP = xSemaphoreCreateMutex();
     MpLock = xSemaphoreCreateMutex();
-    game_config.last_received_ai_response = -6000; //last received AI Response Start Value
     NextKeyQueue = xQueueCreate(1, sizeof(opponent_cmd_t));
     if (xTaskCreate(vUDPControlTask, "UdpControlTask", mainGENERIC_STACK_SIZE*2, NULL,
                     configMAX_PRIORITIES-1, &UDPControlTask) != pdPASS) {
@@ -279,6 +291,15 @@ void initMpMode(){
     vTaskSuspend(UDPControlTask);
 }
 // ------------------------------------------------------------------------------
+void initGameConfig(){
+    game_config.increased_start_score = 0;
+    game_config.infinite_lives = 0;
+    game_config.last_received_ai_response = -6000; //last received AI Response Start Value
+    game_config.mode = None;
+    game_config.level = 0;
+    game_config.game_lock = xSemaphoreCreateMutex();
+}
+
 
 void initiateBarriers(){
     for(int i=0; i<4; i++){
@@ -315,9 +336,9 @@ void initiateOpponent(mode_t mode, int level){
         opponent_ship.max_appear = level + 1;
         opponent_ship.appear_counter = 0;
         opponent_ship.death_frame_counter = 0;
-        opponent_ship.type = 3;
-        xSemaphoreGive(MpLock); 
+        opponent_ship.type = 3; 
     }
+    xSemaphoreGive(MpLock);
 }
 
 void lifeIncrease(){
@@ -369,17 +390,11 @@ void DrawOpponentShip(){
             tumDrawLoadedImage(opponent_explosion_image , opponent_ship.x+5, opponent_ship.y+10);
             opponent_ship.death_frame_counter += 1;
         }
-        xSemaphoreGive(MpLock);
     }
+    xSemaphoreGive(MpLock);
 }
 
-int initiateInvaders(int keep_game_data, int level, mode_t mode){;
-    if(!game_config.infinite_lives){
-        game_config.infinite_lives = 0;
-    }
-    if(!game_config.increased_start_score){
-        game_config.increased_start_score = 0;
-    }
+int initiateInvaders(int keep_game_data, mode_t mode){;
     if(!keep_game_data){
         game_config.mode = mode;
         if(mode==Multiplayer){
@@ -414,7 +429,7 @@ int initiateInvaders(int keep_game_data, int level, mode_t mode){;
                                     SPRITE_SEQUENCE_HORIZONTAL_POS, 2);
     }
 
-    initiateOpponent(game_config.mode, level);
+    initiateOpponent(game_config.mode, game_config.level);
     if(game_config.infinite_lives){
         my_player_ship.lives = -1; //setting lives to -1 to indicate infinite lives
     }
@@ -432,7 +447,7 @@ int initiateInvaders(int keep_game_data, int level, mode_t mode){;
         xSemaphoreGive(my_invaders.shot_lock);
     }
     my_invaders.alive_cnt=INVADER_COLUMNS*INVADER_ROWS;
-    my_invaders.speed = 1.0*(level+1); 
+    my_invaders.speed = 1.0*(game_config.level+1); 
     for(int i=0; i<INVADER_ROWS; i++){
         for(int j=0; j<INVADER_COLUMNS; j++){
             if (i==0){
@@ -454,14 +469,14 @@ int initiateInvaders(int keep_game_data, int level, mode_t mode){;
             my_invaders.invaders[i][j].y=TOP_LEFT_INVADER_Y + (SCREEN_HEIGHT/11)*i;
         }
     }
-    //if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+    if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
         my_player_ship.x=SCREEN_WIDTH/2;
         my_player_ship.y=SCREEN_HEIGHT*7/8;
         my_player_ship.shot_x = 0;
         my_player_ship.shot_y = 0;
         my_player_ship.shot_active = 0;
-      //  xSemaphoreGive(MpLock);
-    //}
+       xSemaphoreGive(MpLock);
+    }
     return 0;
 }
 
@@ -487,8 +502,7 @@ int checkDeath(){
                 xSemaphoreGive(my_invaders.shot_lock);
                 return 1;
                 }
-                xSemaphoreGive(MpLock);
-                xSemaphoreGive(my_invaders.shot_lock);
+            xSemaphoreGive(my_invaders.shot_lock);
             }
         }
     }
@@ -496,45 +510,53 @@ int checkDeath(){
 }
 
 int DrawPlayerShip(){
-    if(!checkDeath()){
-        if(getContinuousButtonState(KEYCODE(A))){
-            my_player_ship.x = my_player_ship.x - 2;
-        }
-        if(getContinuousButtonState(KEYCODE(D))){
-            my_player_ship.x = my_player_ship.x + 2;
-        }
-        if(getDebouncedButtonState(KEYCODE(SPACE))){
-            if(!my_player_ship.shot_active){
-                my_player_ship.shot_active = 1;
-                my_player_ship.shot_y=my_player_ship.shot_y + my_player_ship.y;
-                my_player_ship.shot_x = my_player_ship.x;
-                tumSoundPlaySample(shoot); //shoot sound
+    if (xSemaphoreTake(MpLock, portMAX_DELAY) == pdTRUE){
+        if(!checkDeath()){
+            if(getContinuousButtonState(KEYCODE(A))){
+                my_player_ship.x = my_player_ship.x - 2;
             }
-        }
-        if(my_player_ship.shot_active==1 && my_player_ship.shot_y > SCREEN_HEIGHT/10){
-            my_player_ship.shot_y=my_player_ship.shot_y - 8;
-            tumDrawSprite(invaders_spritesheet, 2, 1, my_player_ship.shot_x, my_player_ship.shot_y);
+            if(getContinuousButtonState(KEYCODE(D))){
+                my_player_ship.x = my_player_ship.x + 2;
+            }
+            if(getDebouncedButtonState(KEYCODE(SPACE))){
+                if(!my_player_ship.shot_active){
+                    my_player_ship.shot_active = 1;
+                    my_player_ship.shot_y=my_player_ship.shot_y + my_player_ship.y;
+                    my_player_ship.shot_x = my_player_ship.x;
+                    tumSoundPlaySample(shoot); //shoot sound
+                }
+            }
+            if(my_player_ship.shot_active==1 && my_player_ship.shot_y > SCREEN_HEIGHT/10){
+                my_player_ship.shot_y=my_player_ship.shot_y - 8;
+                tumDrawSprite(invaders_spritesheet, 2, 1, my_player_ship.shot_x, my_player_ship.shot_y);
+            } else {
+                my_player_ship.shot_active = 0;
+                my_player_ship.shot_y = 0;
+            }
+            lifeIncrease();
+            tumDrawSprite(invaders_spritesheet, 5, 1, my_player_ship.x, my_player_ship.y);
+             xSemaphoreGive(MpLock);
+            return 0;
         } else {
-            my_player_ship.shot_active = 0;
-            my_player_ship.shot_y = 0;
+             xSemaphoreGive(MpLock);
+            return 1;
         }
-        lifeIncrease();
-        tumDrawSprite(invaders_spritesheet, 5, 1, my_player_ship.x, my_player_ship.y);
-        return 0;
-    } else {
-        return 1;
     }
+    return 0;
 }
 
 void opponentAppear(){
     int my_rand;
     my_rand = rand() % 20;
-    if(my_rand > 18 && opponent_ship.appear_counter < opponent_ship.max_appear 
+    if(xSemaphoreTake(MpLock, portMAX_DELAY)==pdTRUE){
+        if(my_rand > 18 && opponent_ship.appear_counter < opponent_ship.max_appear 
         && opponent_ship.x < 0){
-        opponent_ship.x = SCREEN_WIDTH;
-        opponent_ship.alive = 1;
-        opponent_ship.appear_counter +=1;
+            opponent_ship.x = SCREEN_WIDTH;
+            opponent_ship.alive = 1;
+            opponent_ship.appear_counter +=1;
+        }
     }
+    xSemaphoreGive(MpLock);
 }
 
 int DrawBarricades(){
@@ -582,7 +604,10 @@ void checkBarrierHit(){
                     barriers[i].coords[j][1]  <= my_player_ship.shot_y+ my_player_ship.shot_hitbox_alignment){
                     
                     barriers[i].hit_cnt[j] +=2;
-                    my_player_ship.shot_active=0;
+                    if(xSemaphoreTake(MpLock, portMAX_DELAY)==pdTRUE){
+                        my_player_ship.shot_active=0;
+                    }
+                    xSemaphoreGive(MpLock);
                     my_player_ship.shot_y=0;
                 } 
             }
@@ -597,7 +622,10 @@ void checkHit(Invader_t *invader){
         my_player_ship.shot_y + my_player_ship.shot_hitbox_alignment < invader->y + my_invaders.hitbox_height &&
         my_player_ship.shot_y + my_player_ship.shot_hitbox_alignment > invader->y){
             invader->alive = 0;
-            my_player_ship.shot_active=0;
+            if(xSemaphoreTake(MpLock, portMAX_DELAY)==pdTRUE){
+                my_player_ship.shot_active=0;
+            }
+            xSemaphoreGive(MpLock);
             my_player_ship.shot_y=0;
             my_invaders.alive_cnt += -1;
             my_invaders.speed += 0.1;
@@ -694,10 +722,10 @@ void drawLives(){
     }
 }
 
-void drawLevel(int level){
+void drawLevel(){
     static char level_string[20] = { 0 };
     static int level_width = 0;
-    sprintf(level_string, "LEVEL: %d", level+1);
+    sprintf(level_string, "LEVEL: %d", game_config.level+1);
     if (!tumGetTextSize((char *)level_string, &level_width, NULL)){
         tumDrawText(level_string, 10,
                     DEFAULT_FONT_SIZE * 1.5,
@@ -747,12 +775,11 @@ int initiateTimer(){
     return 0;
 }
 
-void startTimer(int current_level){
-    //lock timers with semaphores tbd
+void startTimer(){
     xTimerStart(InvaderShotTimerOne, 0);
-    if(current_level>0){
+    if(game_config.level>0){
         xTimerStart(InvaderShotTimerTwo, 0);
-    } else if (current_level>1){
+    } else if (game_config.level>1){
         xTimerStart(InvaderShotTimerThree, 0);
     }
     xTimerStart(InvaderDownwardsTimer, 0);
@@ -768,13 +795,26 @@ void stopTimer(){
 }
 
 void toggleDownwardSpeed(int up_down){
-    static int ms = 2800;
+    static int ms = 2800; //default timer period
     if(up_down){
-        ms += -200;
-    } else {
-        ms += 200;
+        ms += -200; //faster
+    } else if(game_config.level>0){
+        ms += 200; //slower
     }
     xTimerChangePeriod(InvaderDownwardsTimer, pdMS_TO_TICKS(ms), 0);
+}
+
+void toggleCurrentLevel(char up_down){
+    if(up_down){
+        game_config.level += 1;
+    } else if(game_config.level>0){
+        game_config.level += -1;
+    }
+}
+
+int getCurrentLevel(){
+    int return_value = game_config.level;
+    return return_value;
 }
 
 int drawInvaders(){

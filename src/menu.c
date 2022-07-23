@@ -118,6 +118,10 @@ void vDrawTask(void *pvParameters)
 void drawMenuState(int current_level){
     static char sp_game_string[40] = "SINGLEPLAYER [C]";
     static char mp_game_string[40] = "MULTIPLAYER [J]";
+    static char controls_string[40] = "CONTROLS:";
+    static char move_string[40] = "MOVE [A] [D]";
+    static char shoot_string[40] = "SHOOT [SPACE]";
+    static char quit_string[40] = "QUIT [Q]";
     static char starting_score_string[60];
     static char infinite_lives_string[30] = "";
     static char starting_level_string[40];
@@ -126,6 +130,10 @@ void drawMenuState(int current_level){
     static int mp_string_width = 0;
     static int starting_score_width = 0;
     static int infinite_lives_width = 0;
+    static int controls_string_width = 0;
+    static int move_string_width = 0;
+    static int shoot_string_width = 0;
+    static int quit_string_width = 0;
     updateStartScore();
     sprintf(starting_score_string, "STARTING SCORE [UP]/[DOWN]: %d", getCurrentScore());
     if(updateInfiniteLives()){
@@ -151,17 +159,32 @@ void drawMenuState(int current_level){
         if (!tumGetTextSize((char *)starting_level_string, &starting_level_width, NULL)){
             tumDrawText(starting_level_string, 10,
                         SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
-                        Green);
+                        White);
         }
         if (!tumGetTextSize((char *)starting_score_string, &starting_score_width, NULL)){
             tumDrawText(starting_score_string, 10,
                         SCREEN_HEIGHT*18/20 - DEFAULT_FONT_SIZE,
-                        Green);
+                        White);
         }
         if (!tumGetTextSize((char *)infinite_lives_string, &infinite_lives_width, NULL)){
             tumDrawText(infinite_lives_string, 10,
                         SCREEN_HEIGHT*19/20 - DEFAULT_FONT_SIZE,
-                        Green);
+                        White);
+        }
+        if (!tumGetTextSize((char *)controls_string, &controls_string_width, NULL)){
+            tumDrawText(controls_string, SCREEN_WIDTH*3/4-10-controls_string_width,
+                        SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
+                        White);
+        }
+        if (!tumGetTextSize((char *)move_string, &move_string_width, NULL)){
+            tumDrawText(move_string, SCREEN_WIDTH*3/4-10-controls_string_width,
+                        SCREEN_HEIGHT*18/20 - DEFAULT_FONT_SIZE,
+                        White);
+        }
+        if (!tumGetTextSize((char *)shoot_string, &shoot_string_width, NULL)){
+            tumDrawText(shoot_string, SCREEN_WIDTH*3/4-10-controls_string_width,
+                        SCREEN_HEIGHT*19/20 - DEFAULT_FONT_SIZE,
+                        White);
         }
         xSemaphoreGive(ScreenLock);
     }
@@ -273,20 +296,23 @@ void drawStartSp(){
     }
 }
 
-void drawPlay(int current_level){
+void drawPlay(){
+    static char controls_string[40] = "[Q]UIT   [P]AUSE   [M]ENU";
+    static int controls_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
-        if(drawInvaders()){ //returns 1 if playerShip was hit
-            drawScore();
-            drawLives();
-            drawLevel(current_level);
-            xSemaphoreGive(ScreenLock);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            xSemaphoreTake(ScreenLock, portMAX_DELAY);
-        }
+        char died = drawInvaders(); //returns 1 if playerShip was hit
         drawScore();
         drawLives();
-        drawLevel(current_level);
+        drawLevel();
+        if (!tumGetTextSize((char *)controls_string, &controls_width, NULL)){
+            tumDrawText(controls_string, SCREEN_WIDTH/2 - controls_width/2,
+                        SCREEN_HEIGHT - DEFAULT_FONT_SIZE*1.5,
+                        Green);
+        }
         xSemaphoreGive(ScreenLock);
+        if(died){
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
     }
 }
 

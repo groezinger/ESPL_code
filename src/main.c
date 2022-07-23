@@ -53,7 +53,6 @@ static State_t GameOverState;
 static State_t NextLevelState;
 static State_t PauseState;
 static State_t AiNotRunningState;
-static int current_level = 0;
 
 void changeState(TaskHandle_t* current_state_task, TaskHandle_t* next_state_task)
 {
@@ -109,13 +108,13 @@ void vPlay(void *pvParameters){
             stopTimer();
             pauseMpAI();
             xQueueSend(StateQueue, &GameOverState, 0);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
         if(getAliveInvaders()==0){
-            current_level +=1;
             xQueueSend(StateQueue, &NextLevel, 0);
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
-        drawPlay(current_level);
+        drawPlay();
         if(getDebouncedButtonState(KEYCODE(M))){
             resetCurrentScore();
             stopTimer();
@@ -135,14 +134,16 @@ void vPlay(void *pvParameters){
 void vMenu(void *pvParameters){
     while(1){
         if(getDebouncedButtonState(KEYCODE(H))){
-            current_level += 1;
+            //current_level += 1;
+            toggleCurrentLevel(1);
             toggleDownwardSpeed(1);
         }
-        if(getDebouncedButtonState(KEYCODE(L)) && current_level>0){
-            current_level += -1;
+        if(getDebouncedButtonState(KEYCODE(L))){
+            //current_level += -1;
             toggleDownwardSpeed(0);
+            toggleCurrentLevel(0);
         }
-        drawMenuState(current_level);       
+        drawMenuState(getCurrentLevel());       //getCurrentLevel
         if(getDebouncedButtonState(KEYCODE(C))){
             xQueueSend(StateQueue, &InititateNewSpGameState, 0);
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -157,8 +158,8 @@ void vMenu(void *pvParameters){
 
 void vInititateNewSpGame(void *pvParameters){
     while(1){
-        startTimer(current_level);
-        initiateInvaders(0, current_level, 1);
+        startTimer();
+        initiateInvaders(0, 1);
         drawStartSp();
         vTaskDelay(pdMS_TO_TICKS(1000));
         xQueueSend(StateQueue, &PlayState, 0);
@@ -168,10 +169,10 @@ void vInititateNewSpGame(void *pvParameters){
 
 void vInititateNewMpGame(void *pvParameters){
     while(1){
-        startTimer(current_level);
+        startTimer();
         resumeMpAI();
-        setMpDifficulty(current_level+1);
-        initiateInvaders(0, current_level, 2);
+        setMpDifficulty();
+        initiateInvaders(0, 2);
         drawStartMp();
         vTaskDelay(pdMS_TO_TICKS(1000));
         if(checkAiRunning()){
@@ -195,9 +196,9 @@ void vGameOver(void *pvParameters){
 void vPause(void *pvParameters){
     while(1){
         drawPause();
-        drawLevel(current_level);
+        drawLevel();
         if(getDebouncedButtonState(KEYCODE(P))){
-            startTimer(current_level);
+            startTimer();
             resumeMpAI();
             xQueueSend(StateQueue, &PlayState, 0);
         }
@@ -212,14 +213,15 @@ void vPause(void *pvParameters){
 void vAiNotRunning(void *pvParameters){
     while(1){
         drawAiNotRunning();
-        drawLevel(current_level);
+        drawLevel();
         if(getDebouncedButtonState(KEYCODE(M))){
             resetCurrentScore();
             pauseMpAI();
             xQueueSend(StateQueue, &MenuState, 0);
         }
         if(getDebouncedButtonState(KEYCODE(P)) && checkAiRunning()){
-            startTimer(current_level);
+            startTimer();
+            setMpDifficulty();
             xQueueSend(StateQueue, &PlayState, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(40));
@@ -228,11 +230,13 @@ void vAiNotRunning(void *pvParameters){
 
 void vNextLevel(void *pvParameters){
     while(1){
+        //current_level +=1;
+        toggleCurrentLevel(1);
         toggleDownwardSpeed(1);
         drawNextLevel();
         if(getDebouncedButtonState(KEYCODE(E))){
-            setMpDifficulty(current_level+1);
-            initiateInvaders(1, current_level, 0);
+            setMpDifficulty();
+            initiateInvaders(1, 0);
             xQueueSend(StateQueue, &PlayState, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(40));
@@ -304,11 +308,12 @@ int main(int argc, char *argv[])
     if (!StateQueue) {
         goto err_state_queue;
     }
+    initGameConfig();
     initMyDrawing();
     initiateTimer();
     initScore(); 
     initMpMode();
-    initiateInvaders(0, 0, 0);
+    initiateInvaders(0, 0);
     vTaskSuspend(NextLevel);
     vTaskSuspend(Play);
     vTaskSuspend(InititateNewSpGame);
