@@ -73,7 +73,7 @@ int getCurrentScore(){
     return return_value;
 }
 
-void drawScore(){
+void drawScore(char no_current_score){
     static char current_score[40] = { 0 };
     static int current_score_width = 0;
     static char high_score_sp[30] = { 0 };
@@ -84,10 +84,12 @@ void drawScore(){
         sprintf(current_score, "CURRENT SCORE: %d", Score.current_score);
         sprintf(high_score_sp, "HIGH SCORE SP: %d", Score.high_score_sp);
         sprintf(high_score_mp, "HIGH SCORE MP: %d", Score.high_score_mp);
-        if (!tumGetTextSize((char *)current_score, &current_score_width, NULL)){
-            tumDrawText(current_score, SCREEN_WIDTH/2 - (current_score_width/2),
-                    DEFAULT_FONT_SIZE * 1.5,
-                    Green);
+        if(!no_current_score){
+            if (!tumGetTextSize((char *)current_score, &current_score_width, NULL)){
+                tumDrawText(current_score, SCREEN_WIDTH/2 - (current_score_width/2),
+                        DEFAULT_FONT_SIZE * 1.5,
+                        Green);
+            }
         }
         if (!tumGetTextSize((char *)high_score_sp, &high_score_sp_width, NULL)){
             tumDrawText(high_score_sp, SCREEN_WIDTH - high_score_sp_width - 10,

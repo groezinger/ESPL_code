@@ -1,4 +1,4 @@
-void drawScore();
+void drawScore(char no_current_score);
 
 int getCurrentScore();
 

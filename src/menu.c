@@ -30,10 +30,12 @@
 
 #define FPS_AVERAGE_COUNT 50
 #define FPS_FONT "IBMPlexSans-Bold.ttf"
+#define DEFAULT_RAND 10
 
 static SemaphoreHandle_t ScreenLock = NULL;
 static TaskHandle_t DrawTask = NULL;
 static image_handle_t title_image = NULL;
+static image_handle_t playership_lives_image = NULL;
 
 void vDrawFPS(void)
 {
@@ -115,13 +117,50 @@ void vDrawTask(void *pvParameters)
     }
 }
 
+void drawLives(){
+    static char lives_string[30] = { 0 };
+    static int lives_width = 0;
+    int player_lives = getPlayerLives();
+    if(player_lives >= 0){
+        sprintf(lives_string, "%d", player_lives);
+        if (!tumGetTextSize((char *)lives_string, &lives_width, NULL)){
+            tumDrawText(lives_string, DEFAULT_RAND,
+                        SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5,
+                        Green);
+            for(int i=0; i<player_lives; i++){
+                tumDrawLoadedImage(playership_lives_image,
+                                    DEFAULT_RAND*2 + lives_width + i*20,
+                                    SCREEN_HEIGHT - 20);
+            }
+        }
+    } else {
+        strncpy(lives_string, "LIVES: INFINITE", sizeof(lives_string));
+        if (!tumGetTextSize((char *)lives_string, &lives_width, NULL)){
+            tumDrawText(lives_string, DEFAULT_RAND,
+                        SCREEN_HEIGHT - DEFAULT_FONT_SIZE * 1.5,
+                        Green);
+        }
+    }
+}
+
+void drawLevel(){
+    static char level_string[20] = { 0 };
+    static int level_width = 0;
+    sprintf(level_string, "LEVEL: %d", getCurrentLevel()+1);
+    if (!tumGetTextSize((char *)level_string, &level_width, NULL)){
+        tumDrawText(level_string, 10,
+                    DEFAULT_FONT_SIZE * 1.5,
+                    Green);
+    }    
+}
+
 void drawMenuState(int current_level){
     static char sp_game_string[40] = "SINGLEPLAYER [C]";
     static char mp_game_string[40] = "MULTIPLAYER [J]";
     static char controls_string[40] = "CONTROLS:";
     static char move_string[40] = "MOVE [A] [D]";
     static char shoot_string[40] = "SHOOT [SPACE]";
-    static char quit_string[40] = "QUIT [Q]";
+    static char quit_string[40] = "[Q]UIT";
     static char starting_score_string[60];
     static char infinite_lives_string[30] = "";
     static char starting_level_string[40];
@@ -144,7 +183,7 @@ void drawMenuState(int current_level){
     sprintf(starting_level_string, "STARTING LEVEL [H]IGHER/[L]OWER: %d", current_level+1);
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(1);
         tumDrawLoadedImage(title_image, SCREEN_WIDTH/2-120, SCREEN_HEIGHT/10);
         if (!tumGetTextSize((char *)sp_game_string, &sp_string_width, NULL)){
             tumDrawText(sp_game_string, SCREEN_WIDTH/4 - sp_string_width/2,
@@ -157,35 +196,40 @@ void drawMenuState(int current_level){
                         Green);
         }
         if (!tumGetTextSize((char *)starting_level_string, &starting_level_width, NULL)){
-            tumDrawText(starting_level_string, 10,
-                        SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
-                        White);
+            tumDrawText(starting_level_string, DEFAULT_RAND,
+                        SCREEN_HEIGHT*16/20 - DEFAULT_FONT_SIZE,
+                        Green);
         }
         if (!tumGetTextSize((char *)starting_score_string, &starting_score_width, NULL)){
-            tumDrawText(starting_score_string, 10,
-                        SCREEN_HEIGHT*18/20 - DEFAULT_FONT_SIZE,
-                        White);
+            tumDrawText(starting_score_string, DEFAULT_RAND,
+                        SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
+                        Green);
         }
         if (!tumGetTextSize((char *)infinite_lives_string, &infinite_lives_width, NULL)){
-            tumDrawText(infinite_lives_string, 10,
-                        SCREEN_HEIGHT*19/20 - DEFAULT_FONT_SIZE,
-                        White);
-        }
-        if (!tumGetTextSize((char *)controls_string, &controls_string_width, NULL)){
-            tumDrawText(controls_string, SCREEN_WIDTH*3/4-10-controls_string_width,
-                        SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
-                        White);
-        }
-        if (!tumGetTextSize((char *)move_string, &move_string_width, NULL)){
-            tumDrawText(move_string, SCREEN_WIDTH*3/4-10-controls_string_width,
+            tumDrawText(infinite_lives_string, DEFAULT_RAND,
                         SCREEN_HEIGHT*18/20 - DEFAULT_FONT_SIZE,
-                        White);
+                        Green);
         }
         if (!tumGetTextSize((char *)shoot_string, &shoot_string_width, NULL)){
-            tumDrawText(shoot_string, SCREEN_WIDTH*3/4-10-controls_string_width,
-                        SCREEN_HEIGHT*19/20 - DEFAULT_FONT_SIZE,
-                        White);
+            tumDrawText(shoot_string, SCREEN_WIDTH-DEFAULT_RAND-shoot_string_width,
+                        SCREEN_HEIGHT*18/20 - DEFAULT_FONT_SIZE,
+                        Green);
         }
+        if (!tumGetTextSize((char *)controls_string, &controls_string_width, NULL)){
+            tumDrawText(controls_string, SCREEN_WIDTH-DEFAULT_RAND-shoot_string_width,
+                        SCREEN_HEIGHT*16/20 - DEFAULT_FONT_SIZE,
+                        Green);
+        }
+        if (!tumGetTextSize((char *)move_string, &move_string_width, NULL)){
+            tumDrawText(move_string, SCREEN_WIDTH-DEFAULT_RAND-shoot_string_width,
+                        SCREEN_HEIGHT*17/20 - DEFAULT_FONT_SIZE,
+                        Green);
+        }
+        if (!tumGetTextSize((char *)quit_string, &quit_string_width, NULL)){
+            tumDrawText(quit_string, DEFAULT_RAND,
+                        DEFAULT_FONT_SIZE * 1.5,
+                        Green);
+        }   
         xSemaphoreGive(ScreenLock);
     }
 }
@@ -197,8 +241,9 @@ void drawPause(){
     static int menu_string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(0);
         drawLives();
+        drawLevel();
         if (!tumGetTextSize((char *)pause_string, &string_width, NULL)){
             tumDrawText(pause_string, SCREEN_WIDTH/2 - string_width/2,
                         SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE*2,
@@ -220,8 +265,9 @@ void drawAiNotRunning(){
     static int menu_string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(0);
         drawLives();
+        drawLevel();
         if (!tumGetTextSize((char *)pause_string, &pause_string_width, NULL)){
             tumDrawText(pause_string, SCREEN_WIDTH/2 - pause_string_width/2,
                         SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE*2,
@@ -241,7 +287,7 @@ void drawGameOver(){
     static int string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(0);
         if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
             tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
                         SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
@@ -256,7 +302,7 @@ void drawNextLevel(){
     static int string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(0);
         if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
             tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
                         SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
@@ -271,7 +317,7 @@ void drawStartMp(){
     static int string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(0);
         if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
             tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
                         SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
@@ -286,7 +332,7 @@ void drawStartSp(){
     static int string_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         tumDrawClear(Black);
-        drawScore();
+        drawScore(0);
         if (!tumGetTextSize((char *)new_game_string, &string_width, NULL)){
             tumDrawText(new_game_string, SCREEN_WIDTH/2 - string_width/2,
                         SCREEN_HEIGHT/2 - DEFAULT_FONT_SIZE/2,
@@ -301,7 +347,7 @@ void drawPlay(){
     static int controls_width = 0;
     if (xSemaphoreTake(ScreenLock, portMAX_DELAY) == pdTRUE) {
         char died = drawInvaders(); //returns 1 if playerShip was hit
-        drawScore();
+        drawScore(0);
         drawLives();
         drawLevel();
         if (!tumGetTextSize((char *)controls_string, &controls_width, NULL)){
@@ -318,6 +364,7 @@ void drawPlay(){
 
 int initMyDrawing(){
     title_image = tumDrawLoadScaledImage("../resources/images/title_picture.jpg", 0.2);
+    playership_lives_image = tumDrawLoadScaledImage("../resources/images/invader_ship_image.png", 0.7);
     if (xTaskCreate(vDrawTask, "DrawTask", mainGENERIC_STACK_SIZE*2, NULL,
                     configMAX_PRIORITIES-5, &DrawTask) != pdPASS) {
         goto err_draw_task;
