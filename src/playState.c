@@ -477,23 +477,29 @@ int checkDeath(){
 
 void DrawOpponentShip(){
     static opponent_cmd_t current_key = NONE;
+    int opponent_speed = 2; //default speed two pixels per frame
+    if(game_config.level<3){
+        opponent_speed += game_config.level;
+    } else {
+        opponent_speed += 2;
+    }
     if (NextKeyQueue) {
         xQueueReceive(NextKeyQueue, &current_key, 0);
     }
     checkOpponentHit();
-    if(opponent_ship.alive && opponent_ship.x > -20){
+    if(opponent_ship.alive && opponent_ship.x > -my_invaders.hitbox_width*2){
         tumDrawSprite(opponent_spritesheet, 3, 0, opponent_ship.x, opponent_ship.y);
         if(game_config.mode==SinglePlayer){
-            opponent_ship.x = opponent_ship.x - 2;
+            opponent_ship.x = opponent_ship.x - opponent_speed; //2 pixels per frame default speed
         } else {
             if(current_key == DEC && opponent_ship.x>2){
-                opponent_ship.x = opponent_ship.x - 2;
-            } else if(current_key == INC && opponent_ship.x<(SCREEN_WIDTH-70)){
-                opponent_ship.x = opponent_ship.x + 2;
+                opponent_ship.x = opponent_ship.x - opponent_speed;
+            } else if(current_key == INC && opponent_ship.x<(SCREEN_WIDTH-my_invaders.hitbox_width*2-2)){
+                opponent_ship.x = opponent_ship.x + opponent_speed;
             }
         }
     } 
-    else if(opponent_ship.death_frame_counter<30 && opponent_ship.x > -20){
+    else if(opponent_ship.death_frame_counter<30 && opponent_ship.x > -my_invaders.hitbox_width*2){ //30 frames to display explosion
         //coordinate alignment because Image is not exact same size as sprite
         tumDrawLoadedImage(opponent_explosion_image , opponent_ship.x+5, opponent_ship.y+10);
         opponent_ship.death_frame_counter += 1;
@@ -739,7 +745,7 @@ int initiateTimer(){
     InvaderShotTimerOne = xTimerCreate("InvadershotTimerOne", pdMS_TO_TICKS(1000), pdTRUE, (void*)0, shotOneCallBack);
     InvaderShotTimerTwo = xTimerCreate("InvadershotTimerTwo", pdMS_TO_TICKS(800), pdTRUE, (void*)0, shotTwoCallBack);
     InvaderShotTimerThree = xTimerCreate("InvadershotTimerThreee", pdMS_TO_TICKS(700), pdTRUE, (void*)0, shotThreeCallBack);
-    InvaderDownwardsTimer = xTimerCreate("InvaderDownwardsTimer", pdMS_TO_TICKS(3000), pdTRUE, (void*)0, moveInvadersDown);
+    InvaderDownwardsTimer = xTimerCreate("InvaderDownwardsTimer", pdMS_TO_TICKS(2800), pdTRUE, (void*)0, moveInvadersDown);
     OpponentShipSpTimer = xTimerCreate("OpponentShipSpTimer", pdMS_TO_TICKS(1000), pdTRUE, (void*)0, opponentAppear);
     return 0;
 }
