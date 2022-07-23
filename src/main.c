@@ -311,12 +311,25 @@ int main(int argc, char *argv[])
     if (!StateQueue) {
         goto err_state_queue;
     }
-    initGameConfig();
-    initMyDrawing();
-    initiateTimer();
-    initScore(); 
-    initMpMode();
-    initiateNewGame(0, None);
+    if(initGameConfig()){
+        goto err_init_config;
+    }
+    if(initMyDrawing()){
+        goto err_init_my_drawing;
+    }
+    if(initiateTimer()){
+        goto err_init_timers;
+    }
+    if(initScore()){
+        goto err_init_score;
+    } 
+    if(initMpMode()){
+        goto err_init_mp;
+    }
+    if(initiateNewGame(0, None)){
+        goto err_new_game;
+    }
+    
     vTaskSuspend(NextLevel);
     vTaskSuspend(Play);
     vTaskSuspend(InititateNewSpGame);
@@ -328,6 +341,18 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 
+    err_new_game:
+        exitMpMode();
+    err_init_mp:
+        exitScore();
+    err_init_score:
+        exitTimers();
+    err_init_timers:
+        exitMyDrawing();
+    err_init_my_drawing:
+        exitGameConfig();
+    err_init_config:
+        vQueueDelete(StateQueue);
     err_state_queue:
         vTaskDelete(AiNotRunning);
     err_ai_not_running:

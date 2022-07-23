@@ -36,11 +36,20 @@ typedef struct Score{
 static Score_t Score;
 
 
-void initScore(){
+int initScore(){
     Score.current_score = 0;
     Score.high_score_mp = 0;
     Score.high_score_sp = 0;
     Score.score_lock = xSemaphoreCreateMutex();
+    if(Score.score_lock){
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+void exitScore(){
+    vSemaphoreDelete(Score.score_lock);
 }
 
 void resetCurrentScore(){

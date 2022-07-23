@@ -56,5 +56,12 @@ void resetCurrentScore();
 /**
  * @brief initializes score values and creates mutex
  *
+ * @return 0 on success
  */
-void initScore();
+int initScore();
+
+/**
+ * @brief exit Score
+ *
+ */
+void exitScore();

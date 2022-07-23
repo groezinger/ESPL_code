@@ -59,7 +59,7 @@ int initiateTimer();
  * 
  * @return 0 on success
  */
-void initMpMode();
+int initMpMode();
 
 /**
  * @brief checkButton Presses for higher start score
@@ -154,3 +154,21 @@ void setMpDifficulty();
  *
  */
 char checkAiRunning();
+
+/**
+ * @brief exit Game Config
+ *
+ */
+void exitGameConfig();
+
+/**
+ * @brief exit Timers
+ *
+ */
+void exitTimers();
+
+/**
+ * @brief exit MpMode
+ *
+ */
+void exitMpMode();

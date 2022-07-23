@@ -381,6 +381,11 @@ int initMyDrawing(){
         return 1;
 }
 
+void exitMyDrawing(){
+    vTaskDelete(DrawTask);
+    vSemaphoreDelete(ScreenLock);
+}
+
 
 
 

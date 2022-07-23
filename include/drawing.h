@@ -76,3 +76,9 @@ void drawPlay();
  * @return 0 on success
  */
 int initMyDrawing();
+
+/**
+ * @brief exit drawing
+ *
+ */
+void exitMyDrawing();
