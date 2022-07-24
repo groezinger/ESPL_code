@@ -220,12 +220,12 @@ void vAiNotRunning(void *pvParameters){
             pauseMpAI();
             xQueueSend(StateQueue, &MenuState, 0);
         }
-        if(getDebouncedButtonState(KEYCODE(P)) && checkAiRunning()){
+        if(checkAiRunning() && getDebouncedButtonState(KEYCODE(P))){
             startTimer();
             setMpDifficulty();
             xQueueSend(StateQueue, &PlayState, 0);
         }
-        vTaskDelay(pdMS_TO_TICKS(40));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
