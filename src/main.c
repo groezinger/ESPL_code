@@ -176,6 +176,7 @@ void vInititateNewMpGame(void *pvParameters){
         setMpDifficulty();
         initiateNewGame(0, Multiplayer);
         drawStartMp();
+        checkAiRunning(); //calling it here as well to trigger potential response before check
         vTaskDelay(pdMS_TO_TICKS(1000));
         if(checkAiRunning()){
             xQueueSend(StateQueue, &PlayState, 0);
